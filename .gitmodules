@@ -1,0 +1,3 @@
+[submodule "external/ztnet"]
+	path = external/ztnet
+	url = https://github.com/sinamics/ztnet.git
