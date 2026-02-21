@@ -234,4 +234,4 @@ ztnet --dry-run network list
 
 ## License
 
-MIT
+AGPL-3.0-only (see `LICENSE`)
