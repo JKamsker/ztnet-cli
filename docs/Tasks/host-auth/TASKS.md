@@ -1,0 +1,13 @@
+# Host-bound auth — Checklist
+
+Source spec: `docs/Tasks/host-auth/plan.md`
+
+- [x] Add plan + checklist
+- [ ] Add `host_defaults` to config schema and persistence
+- [ ] Add `auth hosts` CLI definitions (Clap)
+- [ ] Implement canonical host key + host-bound effective config resolution
+- [ ] Implement `auth hosts` command behaviors (list / set-default / unset-default)
+- [ ] Enforce explicit host for `auth set-token` + `auth login` and bind creds to host (+ auto host default if missing)
+- [ ] Add unit tests for host key + profile selection + inference
+- [ ] Update docs (README + docs/configuration.md + docs/commands.md + docs/api-reference.md)
+
