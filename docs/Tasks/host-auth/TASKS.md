@@ -9,4 +9,4 @@ Source spec: `docs/Tasks/host-auth/plan.md`
 - [x] Implement `auth hosts` command behaviors (list / set-default / unset-default)
 - [x] Enforce explicit host for `auth set-token` + `auth login` and bind creds to host (+ auto host default if missing)
 - [x] Add unit tests for host key + profile selection + inference
-- [ ] Update docs (README + docs/configuration.md + docs/commands.md + docs/api-reference.md)
+- [x] Update docs (README + docs/configuration.md + docs/commands.md + docs/api-reference.md)

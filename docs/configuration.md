@@ -23,6 +23,9 @@ The config file is created automatically when you first run `auth set-token` or 
 ```toml
 active_profile = "default"
 
+[host_defaults]
+"http://localhost:3000" = "default"
+
 [profiles.default]
 host = "http://localhost:3000"
 token = "your-api-token-here"
@@ -44,6 +47,7 @@ timeout = "60s"
 | Key | Type | Description |
 |-----|------|-------------|
 | `active_profile` | string | Name of the profile to use by default. Defaults to `"default"` if not set. |
+| `host_defaults` | table | Map of canonical host keys (e.g. `"https://ztnet.example.com"`) to the default profile name for that host. Used when `--host` is set without `--profile`. |
 | `profiles` | table | Map of profile names to their configuration. |
 
 ### Profile keys
@@ -88,14 +92,16 @@ Configuration values are resolved in this order (highest priority first):
 3. **Config file** (active profile in `config.toml`)
 4. **Hardcoded defaults** (`http://localhost:3000`, `table` output, `30s` timeout, 3 retries)
 
+**Note:** When `--host` (or `ZTNET_HOST` / `API_ADDRESS`) is set and `--profile` is **not** set, ztnet-cli will select a profile for that host using `host_defaults` (or the first matching profile by name). Stored tokens/sessions are only used when the selected profile’s host matches the target host.
+
 ## Managing profiles
 
 ### Create / switch profiles
 
 ```bash
 # Save a token to a specific profile
-ztnet --profile staging auth set-token STAGING_TOKEN
 ztnet config set profiles.staging.host https://staging.example.com
+ztnet --profile staging auth set-token STAGING_TOKEN
 
 # Switch the active profile
 ztnet auth profiles use staging
@@ -103,6 +109,18 @@ ztnet auth profiles use staging
 # List all profiles
 ztnet auth profiles list
 ```
+
+### Host defaults (host-bound auth)
+
+Profiles can share the same host (multiple credential sets per ZTNet instance). To control which profile is used when you target a host without passing `--profile`, configure a per-host default:
+
+```bash
+ztnet auth hosts set-default https://ztnet.example.com production
+ztnet auth hosts set-default https://staging.example.com staging
+ztnet auth hosts list
+```
+
+This updates the top-level `[host_defaults]` mapping in `config.toml`.
 
 ### View current config
 

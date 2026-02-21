@@ -33,11 +33,23 @@ Manage API tokens, profiles, and connectivity.
 
 ### auth set-token
 
-Save an API token to a config profile.
+Save an API token to a config profile (host-bound).
+
+Before storing a token, configure the profile’s host (or pass `--host` / set `ZTNET_HOST`). This prevents accidentally reusing the same token across different ZTNet instances.
 
 ```bash
+# Recommended: set host first, then store token
+ztnet config set profiles.default.host https://ztnet.example.com
 ztnet auth set-token <TOKEN>
-ztnet auth set-token --stdin         # read token from stdin
+
+# Or read token from stdin (avoids shell history)
+ztnet auth set-token --stdin
+
+# One-off: bind via host flag
+ztnet --host https://ztnet.example.com auth set-token <TOKEN>
+
+# Explicit profile
+ztnet config set profiles.prod.host https://ztnet.prod.example.com
 ztnet --profile prod auth set-token <TOKEN>
 ```
 
@@ -86,6 +98,37 @@ Switch the active profile.
 
 ```bash
 ztnet auth profiles use production
+```
+
+### auth login
+
+Log in with email/password and store a NextAuth session cookie in the selected profile (used by session-auth commands like `admin` and some `trpc` operations).
+
+```bash
+ztnet config set profiles.default.host https://ztnet.example.com
+ztnet auth login --email user@example.com --password "..."
+
+ztnet --profile prod --host https://ztnet.prod.example.com auth login --email user@example.com --password "..."
+```
+
+### auth logout
+
+Clear the stored session cookie from the selected profile.
+
+```bash
+ztnet auth logout
+ztnet --profile prod auth logout
+```
+
+### auth hosts
+
+Manage per-host default profiles.
+
+```bash
+ztnet auth hosts list
+ztnet auth hosts set-default https://ztnet.example.com production
+ztnet auth hosts set-default https://ztnet.example.com            # infer/create profile
+ztnet auth hosts unset-default https://ztnet.example.com
 ```
 
 ---

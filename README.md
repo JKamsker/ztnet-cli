@@ -13,6 +13,7 @@ $ ztnet network list --json
 
 - **Full REST API coverage** &mdash; networks, members, orgs, stats, planet files
 - **Named profiles** &mdash; switch between multiple ZTNet instances with `auth profiles use`
+- **Host-bound credentials** &mdash; stored tokens/sessions are only used for their configured host
 - **Smart name resolution** &mdash; reference networks and orgs by name, not just ID
 - **Flexible output** &mdash; table, JSON, YAML, or raw for scripting
 - **Hosts file export** &mdash; generate `/etc/hosts` entries from network members
@@ -37,14 +38,14 @@ cargo build --release
 ### Authenticate
 
 ```bash
+# Point to your ZTNet instance (required before storing creds)
+ztnet config set profiles.default.host https://ztnet.example.com
+
 # Save your API token (grab it from ZTNet web UI -> Account -> API tokens)
 ztnet auth set-token YOUR_API_TOKEN
 
 # Or read from stdin to keep it out of shell history
 echo "YOUR_API_TOKEN" | ztnet auth set-token --stdin
-
-# Point to your ZTNet instance
-ztnet config set profiles.default.host https://ztnet.example.com
 
 # Verify it works
 ztnet auth test
@@ -166,11 +167,15 @@ ztnet completion powershell >> $PROFILE
 
 ```bash
 # Set up profiles for different environments
-ztnet --profile prod auth set-token PROD_TOKEN
 ztnet config set profiles.prod.host https://ztnet.prod.example.com
+ztnet --profile prod auth set-token PROD_TOKEN
 
-ztnet --profile staging auth set-token STAGING_TOKEN
 ztnet config set profiles.staging.host https://ztnet.staging.example.com
+ztnet --profile staging auth set-token STAGING_TOKEN
+
+# Optionally set defaults per host (used when you pass --host without --profile)
+ztnet auth hosts set-default https://ztnet.prod.example.com prod
+ztnet auth hosts set-default https://ztnet.staging.example.com staging
 
 # Switch between them
 ztnet auth profiles use prod

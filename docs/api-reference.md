@@ -14,7 +14,13 @@ The token is resolved from (highest priority first):
 
 1. `--token` CLI flag
 2. `ZTNET_TOKEN` or `ZTNET_API_TOKEN` environment variable
-3. `token` field in the active config profile
+3. `token` field in a config profile whose configured host matches the target host
+
+Profile selection is host-aware:
+- If `--profile` is set, that profile is used (and if `--host` is also set, the profile host must match).
+- If `--host` is set without `--profile`, the CLI selects the per-host default profile from `host_defaults` (or the first matching profile by name).
+
+This prevents accidentally sending a token configured for Host A to Host B.
 
 **Exception:** The `--no-auth` flag skips the auth header entirely. This is required for `user create` when bootstrapping the first user on an empty database, and available on `api request` for unauthenticated endpoints.
 
