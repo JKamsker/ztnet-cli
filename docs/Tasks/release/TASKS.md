@@ -12,4 +12,4 @@ Source spec: `docs/Tasks/release/plan.md`
 - [x] Prepare Scoop + WinGet manifests/templates and packaging docs
 - [x] Configure git remote and push to GitHub
 - [x] Verify CI + release workflows are green on GitHub
-- [ ] Publish to crates.io (requires `CARGO_REGISTRY_TOKEN` GitHub secret)
+- [x] Publish to crates.io (`ztnet` v0.1.0)
