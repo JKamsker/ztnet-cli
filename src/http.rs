@@ -126,6 +126,87 @@ impl HttpClient {
 
 		Err(CliError::RateLimited)
 	}
+
+	pub async fn request_bytes(
+		&self,
+		method: Method,
+		path: &str,
+		body: Option<Vec<u8>>,
+		headers: HeaderMap,
+		include_auth: bool,
+		content_type: Option<&str>,
+	) -> Result<Vec<u8>, CliError> {
+		let url = self.build_url(path)?;
+
+		if self.dry_run {
+			print_dry_run(&method, &url, include_auth.then(|| self.token.as_deref()).flatten(), &headers, body.as_deref());
+			return Err(CliError::DryRunPrinted);
+		}
+
+		let mut backoff = Duration::from_millis(200);
+		for attempt in 0..=self.retries {
+			let mut request_headers = headers.clone();
+			request_headers.insert("accept", HeaderValue::from_static("*/*"));
+
+			if include_auth {
+				let token = self.token.as_deref().ok_or(CliError::MissingConfig("token"))?;
+				request_headers.insert(
+					HeaderName::from_static(AUTH_HEADER),
+					HeaderValue::from_str(token)
+						.map_err(|_| CliError::InvalidArgument("token contains invalid characters".to_string()))?,
+				);
+			}
+
+			let mut request = self.client.request(method.clone(), url.clone()).headers(request_headers);
+			if let Some(bytes) = body.clone() {
+				if let Some(content_type) = content_type {
+					request = request.header("content-type", content_type);
+				}
+				request = request.body(bytes);
+			}
+
+			match request.send().await {
+				Ok(resp) => {
+					let status = resp.status();
+					if status.is_success() {
+						return Ok(resp.bytes().await?.to_vec());
+					}
+
+					if should_retry_status(status) && attempt < self.retries {
+						if status == StatusCode::TOO_MANY_REQUESTS {
+							let retry_after = parse_retry_after(&resp);
+							tokio::time::sleep(retry_after.unwrap_or(backoff)).await;
+						} else {
+							tokio::time::sleep(backoff).await;
+						}
+						backoff = (backoff * 2).min(Duration::from_secs(5));
+						continue;
+					}
+
+					if status == StatusCode::TOO_MANY_REQUESTS {
+						return Err(CliError::RateLimited);
+					}
+
+					let body = resp.text().await.ok();
+					return Err(CliError::HttpStatus {
+						status,
+						message: "request failed".to_string(),
+						body,
+					});
+				}
+				Err(err) => {
+					if attempt < self.retries && should_retry_error(&err) {
+						tokio::time::sleep(backoff).await;
+						backoff = (backoff * 2).min(Duration::from_secs(5));
+						continue;
+					}
+					return Err(CliError::Request(err));
+				}
+			}
+		}
+
+		Err(CliError::RateLimited)
+	}
 }
 
 fn should_retry_status(status: StatusCode) -> bool {
@@ -188,4 +269,3 @@ fn redact_token(token: &str) -> String {
 		&token[token.len() - KEEP..]
 	)
 }
-
