@@ -10,7 +10,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Implement `auth` and `config` commands
 - [x] Implement `user create`
 - [x] Implement `org` commands
-- [ ] Implement `network` commands
+- [x] Implement `network` commands
 - [ ] Implement `network member` commands + `member` alias
 - [ ] Implement `stats`, `planet`, and `export hosts`
 - [ ] Implement `api` escape hatch and `trpc` experimental commands
