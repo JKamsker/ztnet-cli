@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
 
 use reqwest::Method;
 use serde_json::json;
@@ -39,7 +40,44 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				return Err(CliError::InvalidArgument("token cannot be empty".to_string()));
 			}
 
-			cfg.profile_mut(&profile).token = Some(token);
+			let explicit_host = explicit_host_override(global);
+			let profile_host = cfg.profile(&profile).host;
+
+			let explicit_host = explicit_host
+				.as_deref()
+				.map(normalize_base_url)
+				.transpose()?;
+			let profile_host = non_empty(profile_host)
+				.as_deref()
+				.map(normalize_base_url)
+				.transpose()?;
+
+			if let (Some(explicit), Some(from_profile)) = (&explicit_host, &profile_host) {
+				if canonical_host_key(explicit)? != canonical_host_key(from_profile)? {
+					return Err(CliError::InvalidArgument(format!(
+						"profile '{profile}' is configured for '{from_profile}', but the target host is '{explicit}'",
+					)));
+				}
+			}
+
+			let host_value = explicit_host.or(profile_host).ok_or_else(|| {
+				CliError::InvalidArgument(
+					"host is required for auth set-token (set profiles.<name>.host, pass --host, or set ZTNET_HOST)"
+						.to_string(),
+				)
+			})?;
+
+			let host_key = canonical_host_key(&host_value)?;
+
+			let profile_cfg = cfg.profile_mut(&profile);
+			if non_empty(profile_cfg.host.clone()).is_none() {
+				profile_cfg.host = Some(host_value);
+			}
+			profile_cfg.token = Some(token);
+
+			if cfg.host_defaults.get(&host_key).is_none() {
+				cfg.host_defaults.insert(host_key, profile.clone());
+			}
 			config::save_config(&config_path, &cfg)?;
 
 			if !global.quiet {
@@ -60,6 +98,33 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 		AuthCommand::Login(args) => {
 			let profile = args.profile.unwrap_or_else(|| effective.profile.clone());
 
+			let explicit_host = explicit_host_override(global);
+			let profile_host = cfg.profile(&profile).host;
+
+			let explicit_host = explicit_host
+				.as_deref()
+				.map(normalize_base_url)
+				.transpose()?;
+			let profile_host = non_empty(profile_host)
+				.as_deref()
+				.map(normalize_base_url)
+				.transpose()?;
+
+			if let (Some(explicit), Some(from_profile)) = (&explicit_host, &profile_host) {
+				if canonical_host_key(explicit)? != canonical_host_key(from_profile)? {
+					return Err(CliError::InvalidArgument(format!(
+						"profile '{profile}' is configured for '{from_profile}', but the target host is '{explicit}'",
+					)));
+				}
+			}
+
+			let host_value = explicit_host.clone().or(profile_host).ok_or_else(|| {
+				CliError::InvalidArgument(
+					"host is required for auth login (set profiles.<name>.host, pass --host, or set ZTNET_HOST)"
+						.to_string(),
+				)
+			})?;
+
 			if args.password_stdin && args.password.is_some() {
 				return Err(CliError::InvalidArgument(
 					"cannot combine --password-stdin with --password".to_string(),
@@ -79,14 +144,14 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 			}
 
 			if global.dry_run {
-				let base = effective.host.trim_end_matches('/');
+				let base = host_value.trim_end_matches('/');
 				println!("POST {base}/api/auth/callback/credentials");
 				println!("content-type: application/x-www-form-urlencoded");
 				println!("(credentials omitted)");
 				return Err(CliError::DryRunPrinted);
 			}
 
-			let base = effective.host.trim_end_matches('/');
+			let base = host_value.trim_end_matches('/');
 
 			let client = reqwest::Client::builder()
 				.timeout(effective.timeout)
@@ -121,8 +186,17 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 					})?;
 
 					let profile_cfg = cfg.profile_mut(&profile);
+					if non_empty(profile_cfg.host.clone()).is_none() {
+						profile_cfg.host = Some(host_value.to_string());
+					}
 					profile_cfg.session_cookie = Some(session);
 					profile_cfg.device_cookie = response.device_cookie;
+
+					let host_key = canonical_host_key(&host_value)?;
+					if cfg.host_defaults.get(&host_key).is_none() {
+						cfg.host_defaults.insert(host_key, profile.clone());
+					}
+
 					config::save_config(&config_path, &cfg)?;
 
 					if !global.quiet {
@@ -627,6 +701,14 @@ fn non_empty(value: Option<String>) -> Option<String> {
 		Some(v) if v.trim().is_empty() => None,
 		other => other,
 	}
+}
+
+fn explicit_host_override(global: &GlobalOpts) -> Option<String> {
+	global
+		.host
+		.clone()
+		.or_else(|| env::var("ZTNET_HOST").ok())
+		.or_else(|| env::var("API_ADDRESS").ok())
 }
 
 fn parse_error_from_location(location: &str) -> Option<String> {
