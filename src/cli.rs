@@ -1,4 +1,5 @@
 mod api;
+mod admin;
 mod auth;
 mod completion;
 mod config_cmd;
@@ -14,6 +15,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
 pub use api::*;
+pub use admin::*;
 pub use auth::*;
 pub use completion::*;
 pub use config_cmd::*;
@@ -24,6 +26,8 @@ pub use planet::*;
 pub use stats::*;
 pub use trpc::*;
 pub use user::*;
+
+pub(crate) const SESSION_AUTH_LONG_ABOUT: &str = "This command requires session authentication (email/password).\nRun `ztnet auth login` first.\n\nAPI tokens are not supported for this operation.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -117,6 +121,11 @@ pub enum Command {
 		#[command(subcommand)]
 		command: AuthCommand,
 	},
+	#[command(about = "Admin commands [session auth]", long_about = SESSION_AUTH_LONG_ABOUT)]
+	Admin {
+		#[command(subcommand)]
+		command: AdminCommand,
+	},
 	Config {
 		#[command(subcommand)]
 		command: ConfigCommand,
@@ -159,4 +168,3 @@ pub enum Command {
 	},
 	Completion(CompletionArgs),
 }
-

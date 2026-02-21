@@ -1,15 +1,19 @@
 mod api;
+mod admin;
 mod auth;
 mod common;
 mod config_cmd;
 mod export;
 mod member;
 mod network;
+mod network_trpc;
 mod org;
 mod planet;
 mod resolve;
 mod stats;
 mod trpc;
+mod trpc_client;
+mod trpc_resolve;
 mod user;
 
 use clap::CommandFactory;
@@ -27,6 +31,7 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
 			Ok(())
 		}
 		Command::Auth { command } => auth::run(&global, command).await,
+		Command::Admin { command } => admin::run(&global, command).await,
 		Command::Config { command } => config_cmd::run(&global, command).await,
 		Command::User { command } => user::run(&global, command).await,
 		Command::Org { command } => org::run(&global, command).await,
@@ -39,4 +44,3 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
 		Command::Trpc { command } => trpc::run(&global, command).await,
 	}
 }
-

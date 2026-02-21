@@ -8,6 +8,7 @@ use crate::http::HttpClient;
 use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine};
+use super::trpc_client::cookie_from_effective;
 
 pub(super) async fn run(global: &GlobalOpts, command: TrpcCommand) -> Result<(), CliError> {
 	let (_config_path, cfg) = load_config_store()?;
@@ -58,7 +59,7 @@ pub(super) async fn run(global: &GlobalOpts, command: TrpcCommand) -> Result<(),
 			} else if let Some(path) = args.cookie_file {
 				Some(std::fs::read_to_string(&path)?.trim().to_string())
 			} else {
-				None
+				cookie_from_effective(&effective)
 			};
 
 			let mut headers = reqwest::header::HeaderMap::new();
@@ -83,4 +84,3 @@ pub(super) async fn run(global: &GlobalOpts, command: TrpcCommand) -> Result<(),
 		}
 	}
 }
-

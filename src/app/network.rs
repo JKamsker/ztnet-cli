@@ -9,6 +9,7 @@ use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine};
 use super::member;
+use super::network_trpc;
 use super::resolve::{extract_network_id, resolve_network_id, resolve_org_id};
 
 pub(super) async fn run(global: &GlobalOpts, command: NetworkCommand) -> Result<(), CliError> {
@@ -159,6 +160,13 @@ pub(super) async fn run(global: &GlobalOpts, command: NetworkCommand) -> Result<
 		NetworkCommand::Member { command } => {
 			member::run_network_member(global, &effective, &client, command).await
 		}
+		NetworkCommand::Delete(args) => network_trpc::delete(global, &effective, args).await,
+		NetworkCommand::Routes(args) => network_trpc::routes(global, &effective, args).await,
+		NetworkCommand::IpPool(args) => network_trpc::ip_pool(global, &effective, args).await,
+		NetworkCommand::Dns(args) => network_trpc::dns(global, &effective, args).await,
+		NetworkCommand::Ipv6(args) => network_trpc::ipv6(global, &effective, args).await,
+		NetworkCommand::Multicast(args) => network_trpc::multicast(global, &effective, args).await,
+		NetworkCommand::FlowRules(args) => network_trpc::flow_rules(global, &effective, args).await,
 	}
 }
 
@@ -271,4 +279,3 @@ fn build_network_update_body(args: &crate::cli::NetworkUpdateArgs) -> Result<Val
 
 	Ok(Value::Object(body))
 }
-

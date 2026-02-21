@@ -13,6 +13,9 @@ pub enum CliError {
 	#[error("missing required configuration: {0}")]
 	MissingConfig(&'static str),
 
+	#[error("this command requires session authentication\n\n  Run: ztnet auth login --email <EMAIL> --password <PASSWORD>\n\n  This command uses a tRPC endpoint that requires user credentials,\n  not an API token. See: ztnet auth login --help")]
+	SessionRequired,
+
 	#[error("invalid argument: {0}")]
 	InvalidArgument(String),
 
@@ -47,6 +50,7 @@ impl CliError {
 		match self {
 			CliError::DryRunPrinted => 0,
 			CliError::MissingConfig(_) | CliError::InvalidArgument(_) => 2,
+			CliError::SessionRequired => 3,
 			CliError::RateLimited => 6,
 			CliError::HttpStatus { status, .. } => match *status {
 				StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => 3,

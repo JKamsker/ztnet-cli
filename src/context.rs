@@ -9,6 +9,8 @@ pub struct EffectiveConfig {
 	pub profile: String,
 	pub host: String,
 	pub token: Option<String>,
+	pub session_cookie: Option<String>,
+	pub device_cookie: Option<String>,
 	pub org: Option<String>,
 	pub network: Option<String>,
 	pub output: OutputFormat,
@@ -43,6 +45,9 @@ pub fn resolve_effective_config(
 		.or_else(|| env::var("ZTNET_API_TOKEN").ok())
 		.or_else(|| env::var("ZTNET_TOKEN").ok())
 		.or_else(|| empty_to_none(profile_cfg.token.clone()));
+
+	let session_cookie = empty_to_none(profile_cfg.session_cookie.clone());
+	let device_cookie = empty_to_none(profile_cfg.device_cookie.clone());
 
 	let org = global
 		.org
@@ -82,6 +87,8 @@ pub fn resolve_effective_config(
 		profile,
 		host,
 		token,
+		session_cookie,
+		device_cookie,
 		org,
 		network,
 		output,

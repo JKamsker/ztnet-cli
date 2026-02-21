@@ -1,7 +1,7 @@
 use reqwest::Method;
 use serde_json::Value;
 
-use crate::cli::{GlobalOpts, MemberCommand, NetworkMemberCommand};
+use crate::cli::{GlobalOpts, MemberCommand, NetworkMemberCommand, OutputFormat};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
 use crate::http::HttpClient;
@@ -9,6 +9,8 @@ use crate::output;
 
 use super::common::{confirm, load_config_store, print_human_or_machine};
 use super::resolve::{resolve_network_id, resolve_org_id};
+use super::trpc_client::{require_cookie_from_effective, TrpcClient};
+use super::trpc_resolve::{resolve_network_org_id, resolve_personal_network_id};
 
 pub(super) async fn run_alias(global: &GlobalOpts, command: MemberCommand) -> Result<(), CliError> {
 	let (_config_path, cfg) = load_config_store()?;
@@ -50,6 +52,8 @@ pub(super) async fn run_alias(global: &GlobalOpts, command: MemberCommand) -> Re
 			)
 			.await
 		}
+		MemberCommand::Add(args) => member_add_trpc(global, &effective, args).await,
+		MemberCommand::Tags(args) => member_tags_trpc(global, &effective, args).await,
 		MemberCommand::Delete(args) => member_delete(global, &effective, &client, args).await,
 	}
 }
@@ -89,7 +93,109 @@ pub(super) async fn run_network_member(
 			.await
 		}
 		NetworkMemberCommand::Delete(args) => member_delete(global, effective, client, args).await,
+		NetworkMemberCommand::Add(args) => member_add_trpc(global, effective, args).await,
+		NetworkMemberCommand::Tags(args) => member_tags_trpc(global, effective, args).await,
 	}
+}
+
+async fn member_add_trpc(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	args: crate::cli::MemberAddArgs,
+) -> Result<(), CliError> {
+	let trpc = trpc_authed(global, effective)?;
+	let network_id = resolve_personal_network_id(&trpc, &args.network).await?;
+	let details = trpc
+		.call(
+			"network.getNetworkById",
+			serde_json::json!({ "nwid": network_id, "central": false }),
+		)
+		.await?;
+	let org_id = resolve_network_org_id(&trpc, effective, args.org.as_deref(), &details).await?;
+
+	let mut input = serde_json::Map::new();
+	input.insert("nwid".to_string(), Value::String(network_id));
+	input.insert("id".to_string(), Value::String(args.node_id));
+	input.insert("central".to_string(), Value::Bool(false));
+	if let Some(org_id) = org_id {
+		input.insert("organizationId".to_string(), Value::String(org_id));
+	}
+
+	let response = trpc.call("networkMember.create", Value::Object(input)).await?;
+	print_human_or_machine(&response, effective.output, global.no_color)?;
+	Ok(())
+}
+
+async fn member_tags_trpc(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	args: crate::cli::MemberTagsArgs,
+) -> Result<(), CliError> {
+	let trpc = trpc_authed(global, effective)?;
+	let network_id = resolve_personal_network_id(&trpc, &args.network).await?;
+	let details = trpc
+		.call(
+			"network.getNetworkById",
+			serde_json::json!({ "nwid": network_id, "central": false }),
+		)
+		.await?;
+	let org_id = resolve_network_org_id(&trpc, effective, args.org.as_deref(), &details).await?;
+
+	match args.command {
+		crate::cli::MemberTagsCommand::List => {
+			let member = trpc
+				.call(
+					"networkMember.getMemberById",
+					serde_json::json!({ "id": args.member, "nwid": network_id, "central": false }),
+				)
+				.await?;
+
+			let tags = member.get("tags").cloned().unwrap_or(Value::Null);
+
+			if matches!(effective.output, OutputFormat::Table) && tags.is_null() {
+				println!("(no tags)");
+				return Ok(());
+			}
+
+			output::print_value(&tags, effective.output, global.no_color)?;
+			Ok(())
+		}
+		crate::cli::MemberTagsCommand::Set(set) => {
+			let tags = serde_json::from_str::<Value>(&set.tags).map_err(|err| {
+				CliError::InvalidArgument(format!("invalid --tags json: {err}"))
+			})?;
+
+			let mut update = serde_json::Map::new();
+			update.insert("tags".to_string(), tags);
+
+			let mut input = serde_json::Map::new();
+			input.insert("nwid".to_string(), Value::String(network_id));
+			input.insert("memberId".to_string(), Value::String(args.member));
+			input.insert("central".to_string(), Value::Bool(false));
+			if let Some(org_id) = org_id {
+				input.insert("organizationId".to_string(), Value::String(org_id));
+			}
+			input.insert("updateParams".to_string(), Value::Object(update));
+
+			let response = trpc.call("networkMember.Tags", Value::Object(input)).await?;
+			print_human_or_machine(&response, effective.output, global.no_color)?;
+			Ok(())
+		}
+	}
+}
+
+fn trpc_authed(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+) -> Result<TrpcClient, CliError> {
+	let cookie = require_cookie_from_effective(effective)?;
+	Ok(TrpcClient::new(
+		&effective.host,
+		effective.timeout,
+		effective.retries,
+		global.dry_run,
+	)?
+	.with_cookie(Some(cookie)))
 }
 
 async fn member_list(
@@ -323,4 +429,3 @@ async fn member_delete(
 	print_human_or_machine(&response, effective.output, global.no_color)?;
 	Ok(())
 }
-

@@ -233,6 +233,10 @@ fn print_dry_run(
 	println!("{method} {url}");
 
 	for (name, value) in headers.iter() {
+		if name.as_str().eq_ignore_ascii_case("cookie") {
+			println!("{name}: REDACTED");
+			continue;
+		}
 		if let Ok(value) = value.to_str() {
 			println!("{name}: {value}");
 		}

@@ -66,6 +66,12 @@ pub struct ProfileConfig {
 	pub token: Option<String>,
 
 	#[serde(default)]
+	pub session_cookie: Option<String>,
+
+	#[serde(default)]
+	pub device_cookie: Option<String>,
+
+	#[serde(default)]
 	pub default_org: Option<String>,
 
 	#[serde(default)]
