@@ -3,6 +3,7 @@ mod config;
 mod context;
 mod error;
 mod http;
+mod output;
 
 use clap::{CommandFactory, Parser};
 

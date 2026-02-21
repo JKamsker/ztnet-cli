@@ -6,7 +6,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Scaffold Rust CLI crate + Clap command tree (incl. `completion`)
 - [x] Implement config file + profiles + precedence (flags > env > config > defaults)
 - [x] Implement HTTP client (auth header, retries/backoff, timeout, dry-run, exit codes)
-- [ ] Implement output formats + logging flags (`--json`, `--output`, `--quiet`, `-v`, `--no-color`)
+- [x] Implement output formats + logging flags (`--json`, `--output`, `--quiet`, `-v`, `--no-color`)
 - [ ] Implement `auth` and `config` commands
 - [ ] Implement `user create`
 - [ ] Implement `org` commands
