@@ -11,5 +11,5 @@ Source spec: `docs/Tasks/release/plan.md`
 - [x] Fix release workflow validation (avoid `secrets` in step `if`)
 - [x] Prepare Scoop + WinGet manifests/templates and packaging docs
 - [x] Configure git remote and push to GitHub
-- [ ] Verify CI + release workflows are green on GitHub
+- [x] Verify CI + release workflows are green on GitHub
 - [ ] Publish to crates.io (requires `CARGO_REGISTRY_TOKEN` GitHub secret)
