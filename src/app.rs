@@ -6,7 +6,7 @@ use reqwest::Method;
 use serde_json::{json, Value};
 
 use crate::cli::{
-	AuthCommand, Cli, Command, ConfigCommand, GlobalOpts, OutputFormat, UserCommand,
+	AuthCommand, Cli, Command, ConfigCommand, GlobalOpts, OrgCommand, OutputFormat, UserCommand,
 };
 use crate::config::{self, Config};
 use crate::context::resolve_effective_config;
@@ -26,6 +26,7 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
 		Command::Auth { command } => run_auth(&global, command).await,
 		Command::Config { command } => run_config(&global, command).await,
 		Command::User { command } => run_user(&global, command).await,
+		Command::Org { command } => run_org(&global, command).await,
 		_ => Err(CliError::Unimplemented("command")),
 	}
 }
@@ -303,6 +304,105 @@ async fn run_user(global: &GlobalOpts, command: UserCommand) -> Result<(), CliEr
 	}
 }
 
+async fn run_org(global: &GlobalOpts, command: OrgCommand) -> Result<(), CliError> {
+	let (_config_path, cfg) = load_config_store()?;
+	let effective = resolve_effective_config(global, &cfg)?;
+
+	let client = HttpClient::new(
+		&effective.host,
+		effective.token.clone(),
+		effective.timeout,
+		effective.retries,
+		global.dry_run,
+	)?;
+
+	match command {
+		OrgCommand::List(args) => {
+			let mut response = client
+				.request_json(Method::GET, "/api/v1/org", None, Default::default(), true)
+				.await?;
+
+			if args.details {
+				let Some(orgs) = response.as_array() else {
+					return Err(CliError::InvalidArgument("expected array response".to_string()));
+				};
+
+				let mut detailed = Vec::with_capacity(orgs.len());
+				for org in orgs {
+					let Some(id) = org.get("id").and_then(|v| v.as_str()) else {
+						continue;
+					};
+					let detail = client
+						.request_json(
+							Method::GET,
+							&format!("/api/v1/org/{id}"),
+							None,
+							Default::default(),
+							true,
+						)
+						.await?;
+					detailed.push(detail);
+				}
+				response = Value::Array(detailed);
+			}
+
+			if args.ids_only {
+				let ids = response
+					.as_array()
+					.map(|arr| {
+						arr.iter()
+							.filter_map(|o| o.get("id").and_then(|v| v.as_str()).map(str::to_string))
+							.collect::<Vec<_>>()
+					})
+					.unwrap_or_default();
+
+				if matches!(effective.output, OutputFormat::Table) {
+					for id in ids {
+						println!("{id}");
+					}
+					return Ok(());
+				}
+
+				output::print_value(&Value::Array(ids.into_iter().map(Value::String).collect()), effective.output, global.no_color)?;
+				return Ok(());
+			}
+
+			output::print_value(&response, effective.output, global.no_color)?;
+			Ok(())
+		}
+		OrgCommand::Get(args) => {
+			let org_id = resolve_org_id(&client, &args.org).await?;
+			let response = client
+				.request_json(
+					Method::GET,
+					&format!("/api/v1/org/{org_id}"),
+					None,
+					Default::default(),
+					true,
+				)
+				.await?;
+			print_human_or_machine(&response, effective.output, global.no_color)?;
+			Ok(())
+		}
+		OrgCommand::Users { command } => match command {
+			crate::cli::OrgUsersCommand::List(args) => {
+				let org_id = resolve_org_id(&client, &args.org).await?;
+				let response = client
+					.request_json(
+						Method::GET,
+						&format!("/api/v1/org/{org_id}/user"),
+						None,
+						Default::default(),
+						true,
+					)
+					.await?;
+				output::print_value(&response, effective.output, global.no_color)?;
+				Ok(())
+			}
+		},
+	}
+}
+
 fn load_config_store() -> Result<(PathBuf, Config), CliError> {
 	let config_path = config::default_config_path()?;
 	let cfg = config::load_config(&config_path)?;
@@ -486,4 +586,49 @@ fn redact_token(token: &str) -> String {
 		&token[..KEEP],
 		&token[token.len() - KEEP..]
 	)
+}
+
+async fn resolve_org_id(client: &HttpClient, org: &str) -> Result<String, CliError> {
+	let org = org.trim();
+	if org.is_empty() {
+		return Err(CliError::InvalidArgument("org cannot be empty".to_string()));
+	}
+
+	let list = client
+		.request_json(Method::GET, "/api/v1/org", None, Default::default(), true)
+		.await?;
+
+	let Some(orgs) = list.as_array() else {
+		return Ok(org.to_string());
+	};
+
+	if orgs
+		.iter()
+		.any(|o| o.get("id").and_then(|v| v.as_str()) == Some(org))
+	{
+		return Ok(org.to_string());
+	}
+
+	let mut matches = Vec::new();
+	for o in orgs {
+		let id = o.get("id").and_then(|v| v.as_str());
+		let name = o
+			.get("orgName")
+			.and_then(|v| v.as_str())
+			.or_else(|| o.get("name").and_then(|v| v.as_str()));
+
+		if let (Some(id), Some(name)) = (id, name) {
+			if name.eq_ignore_ascii_case(org) {
+				matches.push(id.to_string());
+			}
+		}
+	}
+
+	match matches.len() {
+		0 => Ok(org.to_string()),
+		1 => Ok(matches.remove(0)),
+		_ => Err(CliError::InvalidArgument(format!(
+			"org name '{org}' is ambiguous"
+		))),
+	}
 }

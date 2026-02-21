@@ -9,7 +9,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Implement output formats + logging flags (`--json`, `--output`, `--quiet`, `-v`, `--no-color`)
 - [x] Implement `auth` and `config` commands
 - [x] Implement `user create`
-- [ ] Implement `org` commands
+- [x] Implement `org` commands
 - [ ] Implement `network` commands
 - [ ] Implement `network member` commands + `member` alias
 - [ ] Implement `stats`, `planet`, and `export hosts`
