@@ -55,6 +55,9 @@ pub struct Config {
 
 	#[serde(default)]
 	pub profiles: BTreeMap<String, ProfileConfig>,
+
+	#[serde(default)]
+	pub host_defaults: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
