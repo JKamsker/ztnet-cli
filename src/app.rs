@@ -6,9 +6,9 @@ use reqwest::Method;
 use serde_json::{json, Value};
 
 use crate::cli::{
-	AuthCommand, Cli, Command, ConfigCommand, GlobalOpts, MemberCommand, NetworkCommand,
-	NetworkMemberCommand, OrgCommand, OutputFormat, PlanetCommand, StatsCommand, ExportCommand,
-	UserCommand,
+	ApiCommand, AuthCommand, Cli, Command, ConfigCommand, ExportCommand, GlobalOpts, MemberCommand,
+	NetworkCommand, NetworkMemberCommand, OrgCommand, OutputFormat, PlanetCommand, StatsCommand,
+	TrpcCommand, UserCommand,
 };
 use crate::config::{self, Config};
 use crate::context::resolve_effective_config;
@@ -34,7 +34,8 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
 		Command::Stats { command } => run_stats(&global, command).await,
 		Command::Planet { command } => run_planet(&global, command).await,
 		Command::Export { command } => run_export(&global, command).await,
-		_ => Err(CliError::Unimplemented("command")),
+		Command::Api { command } => run_api(&global, command).await,
+		Command::Trpc { command } => run_trpc(&global, command).await,
 	}
 }
 
@@ -998,6 +999,236 @@ async fn run_export(global: &GlobalOpts, command: ExportCommand) -> Result<(), C
 	match command {
 		ExportCommand::Hosts(args) => export_hosts(global, &effective, &client, args).await,
 	}
+}
+
+async fn run_api(global: &GlobalOpts, command: ApiCommand) -> Result<(), CliError> {
+	let (_config_path, cfg) = load_config_store()?;
+	let effective = resolve_effective_config(global, &cfg)?;
+
+	let client = HttpClient::new(
+		&effective.host,
+		effective.token.clone(),
+		effective.timeout,
+		effective.retries,
+		global.dry_run,
+	)?;
+
+	match command {
+		ApiCommand::Request(args) => {
+			let method = parse_method(&args.method)?;
+			exec_api_request(
+				global,
+				&effective,
+				&client,
+				method,
+				&args.path,
+				args.body,
+				args.body_file,
+				args.header,
+				args.no_auth,
+				args.raw,
+			)
+			.await
+		}
+		ApiCommand::Get(args) => {
+			exec_api_request(
+				global,
+				&effective,
+				&client,
+				Method::GET,
+				&args.path,
+				None,
+				None,
+				vec![],
+				false,
+				false,
+			)
+			.await
+		}
+		ApiCommand::Post(args) => {
+			exec_api_request(
+				global,
+				&effective,
+				&client,
+				Method::POST,
+				&args.path,
+				args.body,
+				args.body_file,
+				vec![],
+				false,
+				false,
+			)
+			.await
+		}
+		ApiCommand::Delete(args) => {
+			exec_api_request(
+				global,
+				&effective,
+				&client,
+				Method::DELETE,
+				&args.path,
+				None,
+				None,
+				vec![],
+				false,
+				false,
+			)
+			.await
+		}
+	}
+}
+
+async fn exec_api_request(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	method: Method,
+	path: &str,
+	body: Option<String>,
+	body_file: Option<PathBuf>,
+	headers: Vec<String>,
+	no_auth: bool,
+	raw: bool,
+) -> Result<(), CliError> {
+	let mut header_map = reqwest::header::HeaderMap::new();
+	for raw_header in headers {
+		let (k, v) = raw_header.split_once(':').ok_or_else(|| {
+			CliError::InvalidArgument(format!("invalid header (expected K:V): {raw_header}"))
+		})?;
+
+		let name = reqwest::header::HeaderName::from_bytes(k.trim().as_bytes()).map_err(|_| {
+			CliError::InvalidArgument(format!("invalid header name: {}", k.trim()))
+		})?;
+		let value = reqwest::header::HeaderValue::from_str(v.trim()).map_err(|_| {
+			CliError::InvalidArgument(format!("invalid header value for: {}", k.trim()))
+		})?;
+		header_map.insert(name, value);
+	}
+
+	let include_auth = !no_auth && path.trim_start().starts_with("/api/v1");
+
+	let body_value = if let Some(body) = body {
+		Some(
+			serde_json::from_str::<Value>(&body)
+				.map_err(|err| CliError::InvalidArgument(format!("invalid --body json: {err}")))?,
+		)
+	} else if let Some(path) = body_file {
+		let text = std::fs::read_to_string(&path)?;
+		Some(serde_json::from_str::<Value>(&text).map_err(|err| {
+			CliError::InvalidArgument(format!("invalid --body-file json: {err}"))
+		})?)
+	} else {
+		None
+	};
+
+	if raw {
+		let body_bytes = body_value
+			.as_ref()
+			.map(|v| serde_json::to_vec(v))
+			.transpose()?;
+
+		let bytes = client
+			.request_bytes(
+				method,
+				path,
+				body_bytes,
+				header_map,
+				include_auth,
+				body_value.as_ref().map(|_| "application/json"),
+			)
+			.await?;
+
+		io::stdout().write_all(&bytes)?;
+		return Ok(());
+	}
+
+	let response = client
+		.request_json(method, path, body_value, header_map, include_auth)
+		.await?;
+
+	output::print_value(&response, effective.output, global.no_color)?;
+	Ok(())
+}
+
+async fn run_trpc(global: &GlobalOpts, command: TrpcCommand) -> Result<(), CliError> {
+	let (_config_path, cfg) = load_config_store()?;
+	let effective = resolve_effective_config(global, &cfg)?;
+
+	let client = HttpClient::new(
+		&effective.host,
+		None,
+		effective.timeout,
+		effective.retries,
+		global.dry_run,
+	)?;
+
+	match command {
+		TrpcCommand::List => {
+			let value = json!({
+				"routers": {
+					"network": ["getUserNetworks", "getNetworkById", "deleteNetwork", "ipv6", "enableIpv4AutoAssign", "managedRoutes", "easyIpAssignment"],
+					"networkMember": ["getAll", "getMemberById", "create", "Update", "Tags", "UpdateDatabaseOnly", "stash", "delete", "getMemberAnotations", "removeMemberAnotations", "bulkDeleteStashed"],
+					"auth": ["register", "me", "update", "validateResetPasswordToken", "passwordResetLink", "changePasswordFromJwt", "sendVerificationEmail", "validateEmailVerificationToken", "updateUserOptions", "setZtApi", "setLocalZt", "getApiToken", "addApiToken", "deleteApiToken", "deleteUserDevice"],
+					"mfaAuth": ["mfaValidateToken", "mfaResetLink", "mfaResetValidation", "validateRecoveryToken"],
+					"admin": ["updateUser", "deleteUser", "createUser", "getUser", "getUsers", "generateInviteLink", "getInvitationLink", "deleteInvitationLink", "getControllerStats", "getAllOptions", "changeRole", "updateGlobalOptions", "getMailTemplates", "setMail", "setMailTemplates", "getDefaultMailTemplate", "sendTestMail", "unlinkedNetwork", "assignNetworkToUser", "addUserGroup", "getUserGroups", "deleteUserGroup", "assignUserGroup", "getIdentity", "getPlanet", "makeWorld", "resetWorld", "createBackup", "downloadBackup", "listBackups", "deleteBackup", "restoreBackup", "uploadBackup"],
+					"settings": ["getAllOptions", "getPublicOptions", "getAdminOptions"],
+					"org": ["createOrg", "deleteOrg", "updateMeta", "getOrgIdbyUserid", "getAllOrg", "getOrgUserRoleById", "getPlatformUsers", "getOrgUsers", "getOrgById", "createOrgNetwork", "changeUserRole", "sendMessage", "getMessages", "markMessagesAsRead", "getOrgNotifications", "addUser", "leave", "getLogs", "preValidateUserInvite", "generateInviteLink", "resendInvite", "inviteUserByMail", "deleteInvite", "getInvites", "transferNetworkOwnership", "deleteOrgWebhooks", "addOrgWebhooks", "getOrgWebhooks", "updateOrganizationSettings", "getOrganizationSettings", "updateOrganizationNotificationSettings", "getOrganizationNotificationTemplate", "getDefaultOrganizationNotificationTemplate", "updateOrganizationNotificationTemplate", "sendTestOrganizationNotification"],
+					"public": ["registrationAllowed", "getWelcomeMessage"]
+				}
+			});
+
+			print_human_or_machine(&value, effective.output, global.no_color)?;
+			Ok(())
+		}
+		TrpcCommand::Call(args) => {
+			let input = if let Some(input) = args.input {
+				serde_json::from_str::<Value>(&input).map_err(|err| {
+					CliError::InvalidArgument(format!("invalid --input json: {err}"))
+				})?
+			} else if let Some(path) = args.input_file {
+				let text = std::fs::read_to_string(&path)?;
+				serde_json::from_str::<Value>(&text).map_err(|err| {
+					CliError::InvalidArgument(format!("invalid --input-file json: {err}"))
+				})?
+			} else {
+				Value::Null
+			};
+
+			let cookie = if let Some(cookie) = args.cookie {
+				Some(cookie)
+			} else if let Some(path) = args.cookie_file {
+				Some(std::fs::read_to_string(&path)?.trim().to_string())
+			} else {
+				None
+			};
+
+			let mut headers = reqwest::header::HeaderMap::new();
+			if let Some(cookie) = cookie {
+				headers.insert(
+					reqwest::header::COOKIE,
+					reqwest::header::HeaderValue::from_str(cookie.trim()).map_err(|_| {
+						CliError::InvalidArgument("invalid cookie header value".to_string())
+					})?,
+				);
+			}
+
+			let body = json!({ "0": { "json": input } });
+			let path = format!("/api/trpc/{}?batch=1", args.procedure);
+
+			let response = client
+				.request_json(Method::POST, &path, Some(body), headers, false)
+				.await?;
+
+			output::print_value(&response, effective.output, global.no_color)?;
+			Ok(())
+		}
+	}
+}
+
+fn parse_method(raw: &str) -> Result<Method, CliError> {
+	let raw = raw.trim().to_ascii_uppercase();
+	Method::from_bytes(raw.as_bytes())
+		.map_err(|_| CliError::InvalidArgument(format!("invalid http method: {raw}")))
 }
 
 async fn export_hosts(
