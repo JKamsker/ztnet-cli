@@ -14,4 +14,6 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Implement `network member` commands + `member` alias
 - [x] Implement `stats`, `planet`, and `export hosts`
 - [x] Implement `api` escape hatch and `trpc` experimental commands
+- [x] Refactor: split `src/app.rs` into modules (<500 lines/file)
+- [ ] Refactor: split `src/cli.rs` into modules (<500 lines/file)
 - [ ] Add Docker-based local ZTNet test harness + run CLI smoke test
