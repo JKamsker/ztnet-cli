@@ -1,8 +1,12 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use reqwest::Method;
 use serde_json::json;
+use url::Url;
 
 use crate::cli::{AuthCommand, GlobalOpts, OutputFormat};
 use crate::config;
+use crate::context::{canonical_host_key, canonical_host_key_opt};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
 use crate::http::HttpClient;
@@ -235,9 +239,15 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				Ok(())
 			}
 		},
-		AuthCommand::Hosts { .. } => Err(CliError::InvalidArgument(
-			"auth hosts commands not implemented yet".to_string(),
-		)),
+		AuthCommand::Hosts { command } => match command {
+			crate::cli::AuthHostsCommand::List => auth_hosts_list(&cfg, effective.output, global),
+			crate::cli::AuthHostsCommand::SetDefault(args) => {
+				auth_hosts_set_default(global, &config_path, &mut cfg, &effective, args)
+			}
+			crate::cli::AuthHostsCommand::UnsetDefault(args) => {
+				auth_hosts_unset_default(global, &config_path, &mut cfg, &effective, args)
+			}
+		},
 	}
 }
 
@@ -407,6 +417,216 @@ fn extract_cookie_value(set_cookies: &[String], name: &str) -> Option<String> {
 		}
 	}
 	None
+}
+
+fn auth_hosts_list(
+	cfg: &crate::config::Config,
+	format: OutputFormat,
+	global: &GlobalOpts,
+) -> Result<(), CliError> {
+	let mut hosts: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+	for host in cfg.host_defaults.keys() {
+		hosts.entry(host.clone()).or_default();
+	}
+
+	for (name, profile) in &cfg.profiles {
+		let Some(host_key) = canonical_host_key_opt(profile.host.as_deref()) else {
+			continue;
+		};
+		hosts
+			.entry(host_key)
+			.or_default()
+			.insert(name.clone());
+	}
+
+	let mut rows = Vec::with_capacity(hosts.len());
+	for (host, profiles) in hosts {
+		let default_profile = cfg.host_defaults.get(&host).cloned();
+		let profiles: Vec<String> = profiles.into_iter().collect();
+		rows.push(json!({
+			"host": host,
+			"default_profile": default_profile,
+			"profiles": profiles,
+		}));
+	}
+
+	output::print_value(&serde_json::Value::Array(rows), format, global.no_color)?;
+	Ok(())
+}
+
+fn auth_hosts_set_default(
+	global: &GlobalOpts,
+	config_path: &std::path::Path,
+	cfg: &mut crate::config::Config,
+	effective: &crate::context::EffectiveConfig,
+	args: crate::cli::AuthHostsSetDefaultArgs,
+) -> Result<(), CliError> {
+	let host_value = normalize_base_url(&args.host)?;
+	let host_key = canonical_host_key(&host_value)?;
+
+	let mut matching_profiles = Vec::new();
+	for (name, profile) in &cfg.profiles {
+		let Some(profile_key) = canonical_host_key_opt(profile.host.as_deref()) else {
+			continue;
+		};
+		if profile_key == host_key {
+			matching_profiles.push(name.clone());
+		}
+	}
+
+	let profile = if let Some(profile) = args.profile {
+		profile
+	} else if matching_profiles.is_empty() {
+		infer_profile_name(&host_value, cfg)?
+	} else {
+		matching_profiles
+			.into_iter()
+			.next()
+			.expect("non-empty")
+	};
+
+	{
+		let profile_cfg = cfg.profile_mut(&profile);
+		match non_empty(profile_cfg.host.clone()) {
+			Some(existing) => {
+				let existing_key = canonical_host_key(&existing)?;
+				if existing_key != host_key {
+					return Err(CliError::InvalidArgument(format!(
+						"profile '{profile}' is configured for '{existing}', but the target host is '{host_value}'",
+					)));
+				}
+			}
+			None => {
+				profile_cfg.host = Some(host_value.clone());
+			}
+		}
+	}
+
+	cfg.host_defaults.insert(host_key.clone(), profile.clone());
+	config::save_config(config_path, cfg)?;
+
+	if !global.quiet {
+		eprintln!("Default profile for '{host_key}' set to '{profile}'.");
+	}
+
+	let value = json!({
+		"host": host_key,
+		"default_profile": profile,
+	});
+	output::print_value(&value, effective.output, global.no_color)?;
+	Ok(())
+}
+
+fn auth_hosts_unset_default(
+	global: &GlobalOpts,
+	config_path: &std::path::Path,
+	cfg: &mut crate::config::Config,
+	effective: &crate::context::EffectiveConfig,
+	args: crate::cli::AuthHostsUnsetDefaultArgs,
+) -> Result<(), CliError> {
+	let host_value = normalize_base_url(&args.host)?;
+	let host_key = canonical_host_key(&host_value)?;
+
+	let removed = cfg.host_defaults.remove(&host_key).is_some();
+	config::save_config(config_path, cfg)?;
+
+	if !global.quiet {
+		if removed {
+			eprintln!("Default profile for '{host_key}' removed.");
+		} else {
+			eprintln!("No default profile configured for '{host_key}'.");
+		}
+	}
+
+	let value = json!({
+		"host": host_key,
+		"removed": removed,
+	});
+	output::print_value(&value, effective.output, global.no_color)?;
+	Ok(())
+}
+
+fn normalize_base_url(raw: &str) -> Result<String, CliError> {
+	let trimmed = raw.trim();
+	if trimmed.is_empty() {
+		return Err(CliError::InvalidArgument("host cannot be empty".to_string()));
+	}
+	Ok(trimmed.trim_end_matches('/').to_string())
+}
+
+fn infer_profile_name(host: &str, cfg: &crate::config::Config) -> Result<String, CliError> {
+	let url = Url::parse(host.trim())
+		.map_err(|err| CliError::InvalidArgument(format!("invalid host url: {err}")))?;
+
+	let Some(hostname) = url.host_str() else {
+		return Err(CliError::InvalidArgument(format!(
+			"invalid host url: missing hostname in '{host}'"
+		)));
+	};
+
+	let scheme = url.scheme().to_ascii_lowercase();
+	let default_port = match scheme.as_str() {
+		"http" => Some(80),
+		"https" => Some(443),
+		_ => None,
+	};
+
+	let port = url.port();
+	let include_port = match (port, default_port) {
+		(Some(p), Some(d)) => p != d,
+		(Some(_), None) => true,
+		(None, _) => false,
+	};
+
+	let mut base = slugify_profile_name(hostname);
+	if base.is_empty() {
+		base = "host".to_string();
+	}
+
+	if include_port {
+		base.push('-');
+		base.push_str(&port.expect("include_port implies Some").to_string());
+	}
+
+	if !cfg.profiles.contains_key(&base) {
+		return Ok(base);
+	}
+
+	for n in 2.. {
+		let candidate = format!("{base}-{n}");
+		if !cfg.profiles.contains_key(&candidate) {
+			return Ok(candidate);
+		}
+	}
+
+	unreachable!("infinite loop must return")
+}
+
+fn slugify_profile_name(value: &str) -> String {
+	let mut out = String::new();
+	let mut prev_dash = false;
+	for ch in value.chars() {
+		let lower = ch.to_ascii_lowercase();
+		if lower.is_ascii_lowercase() || lower.is_ascii_digit() {
+			out.push(lower);
+			prev_dash = false;
+			continue;
+		}
+
+		if !prev_dash && !out.is_empty() {
+			out.push('-');
+			prev_dash = true;
+		}
+	}
+	out.trim_matches('-').to_string()
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+	match value {
+		Some(v) if v.trim().is_empty() => None,
+		other => other,
+	}
 }
 
 fn parse_error_from_location(location: &str) -> Option<String> {

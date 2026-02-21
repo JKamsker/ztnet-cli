@@ -60,6 +60,9 @@ fn write_table<W: Write>(mut writer: W, value: &Value, _no_color: bool) -> Resul
 		"nwname",
 		"authorized",
 		"memberCount",
+		"host",
+		"default_profile",
+		"profiles",
 	];
 
 	let mut columns: Vec<&'static str> = Vec::new();
@@ -96,4 +99,3 @@ fn value_to_cell(value: &Value) -> String {
 		_ => serde_json::to_string(value).unwrap_or_default(),
 	}
 }
-

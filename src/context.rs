@@ -155,7 +155,7 @@ fn empty_to_none(value: Option<String>) -> Option<String> {
 	}
 }
 
-fn canonical_host_key(raw: &str) -> Result<String, CliError> {
+pub(crate) fn canonical_host_key(raw: &str) -> Result<String, CliError> {
 	let url = Url::parse(raw.trim())
 		.map_err(|err| CliError::InvalidArgument(format!("invalid host url: {err}")))?;
 
@@ -190,7 +190,7 @@ fn canonical_host_key(raw: &str) -> Result<String, CliError> {
 	}
 }
 
-fn canonical_host_key_opt(raw: Option<&str>) -> Option<String> {
+pub(crate) fn canonical_host_key_opt(raw: Option<&str>) -> Option<String> {
 	let raw = raw?.trim();
 	if raw.is_empty() {
 		return None;
