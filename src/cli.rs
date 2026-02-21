@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
 #[command(name = "ztnet", version, about = "ZTNet CLI — manage ZeroTier networks via ZTNet")]
@@ -25,8 +26,8 @@ pub struct GlobalOpts {
 	#[arg(short = 't', long, value_name = "TOKEN", help = "API token (x-ztnet-auth)")]
 	pub token: Option<String>,
 
-	#[arg(long, value_name = "NAME", default_value = "default")]
-	pub profile: String,
+	#[arg(long, value_name = "NAME")]
+	pub profile: Option<String>,
 
 	#[arg(long, value_name = "ORG")]
 	pub org: Option<String>,
@@ -37,8 +38,8 @@ pub struct GlobalOpts {
 	#[arg(long, help = "Output JSON (shortcut for --output json)")]
 	pub json: bool,
 
-	#[arg(short = 'o', long, value_name = "FORMAT", default_value_t = OutputFormat::Table)]
-	pub output: OutputFormat,
+	#[arg(short = 'o', long, value_name = "FORMAT")]
+	pub output: Option<OutputFormat>,
 
 	#[arg(long, help = "Disable ANSI colors")]
 	pub no_color: bool,
@@ -49,11 +50,11 @@ pub struct GlobalOpts {
 	#[arg(short = 'v', long, action = clap::ArgAction::Count)]
 	pub verbose: u8,
 
-	#[arg(long, value_name = "DURATION", default_value = "30s")]
-	pub timeout: String,
+	#[arg(long, value_name = "DURATION")]
+	pub timeout: Option<String>,
 
-	#[arg(long, value_name = "N", default_value_t = 3)]
-	pub retries: u32,
+	#[arg(long, value_name = "N")]
+	pub retries: Option<u32>,
 
 	#[arg(long, help = "Print the HTTP request and exit (no network calls)")]
 	pub dry_run: bool,
@@ -62,7 +63,8 @@ pub struct GlobalOpts {
 	pub yes: bool,
 }
 
-#[derive(ValueEnum, Debug, Clone, Copy, Default)]
+#[derive(ValueEnum, Serialize, Deserialize, Debug, Clone, Copy, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
 	#[default]
 	Table,
