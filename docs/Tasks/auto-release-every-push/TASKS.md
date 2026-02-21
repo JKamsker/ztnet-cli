@@ -3,7 +3,7 @@
 Source spec: `docs/Tasks/auto-release-every-push/plan.md`
 
 - [x] Add plan + checklist
-- [ ] Add `version-bump` workflow (patch bump + tag) on `master` push
+- [x] Add `version-bump` workflow (patch bump + tag) on `master` push
 - [ ] Update release workflow to trigger on tags, run tests, and publish on every new tag
 - [ ] Add Scoop bucket manifest in-repo + automate updates on release
 - [ ] Add WinGet workflow to open PRs on every GitHub Release (token-gated)
