@@ -4,7 +4,7 @@ Source spec: `docs/Tasks/host-auth/plan.md`
 
 - [x] Add plan + checklist
 - [x] Add `host_defaults` to config schema and persistence
-- [ ] Add `auth hosts` CLI definitions (Clap)
+- [x] Add `auth hosts` CLI definitions (Clap)
 - [ ] Implement canonical host key + host-bound effective config resolution
 - [ ] Implement `auth hosts` command behaviors (list / set-default / unset-default)
 - [ ] Enforce explicit host for `auth set-token` + `auth login` and bind creds to host (+ auto host default if missing)

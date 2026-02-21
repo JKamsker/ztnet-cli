@@ -12,6 +12,10 @@ pub enum AuthCommand {
 		#[command(subcommand)]
 		command: AuthProfilesCommand,
 	},
+	Hosts {
+		#[command(subcommand)]
+		command: AuthHostsCommand,
+	},
 }
 
 #[derive(Args, Debug)]
@@ -72,5 +76,27 @@ pub enum AuthProfilesCommand {
 pub struct AuthProfilesUseArgs {
 	#[arg(value_name = "NAME")]
 	pub name: String,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthHostsCommand {
+	List,
+	SetDefault(AuthHostsSetDefaultArgs),
+	UnsetDefault(AuthHostsUnsetDefaultArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct AuthHostsSetDefaultArgs {
+	#[arg(value_name = "HOST")]
+	pub host: String,
+
+	#[arg(value_name = "PROFILE")]
+	pub profile: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct AuthHostsUnsetDefaultArgs {
+	#[arg(value_name = "HOST")]
+	pub host: String,
 }
 

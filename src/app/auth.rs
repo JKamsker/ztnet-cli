@@ -235,6 +235,9 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				Ok(())
 			}
 		},
+		AuthCommand::Hosts { .. } => Err(CliError::InvalidArgument(
+			"auth hosts commands not implemented yet".to_string(),
+		)),
 	}
 }
 
