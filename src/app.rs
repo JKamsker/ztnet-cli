@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use clap::CommandFactory;
@@ -6,8 +6,8 @@ use reqwest::Method;
 use serde_json::{json, Value};
 
 use crate::cli::{
-	AuthCommand, Cli, Command, ConfigCommand, GlobalOpts, NetworkCommand, OrgCommand, OutputFormat,
-	UserCommand,
+	AuthCommand, Cli, Command, ConfigCommand, GlobalOpts, MemberCommand, NetworkCommand,
+	NetworkMemberCommand, OrgCommand, OutputFormat, UserCommand,
 };
 use crate::config::{self, Config};
 use crate::context::resolve_effective_config;
@@ -29,6 +29,7 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
 		Command::User { command } => run_user(&global, command).await,
 		Command::Org { command } => run_org(&global, command).await,
 		Command::Network { command } => run_network(&global, command).await,
+		Command::Member { command } => run_member_alias(&global, command).await,
 		_ => Err(CliError::Unimplemented("command")),
 	}
 }
@@ -550,8 +551,346 @@ async fn run_network(global: &GlobalOpts, command: NetworkCommand) -> Result<(),
 			print_human_or_machine(&response, effective.output, global.no_color)?;
 			Ok(())
 		}
-		NetworkCommand::Member { .. } => Err(CliError::Unimplemented("network member")),
+		NetworkCommand::Member { command } => {
+			run_network_member(global, &effective, &client, command).await
+		}
 	}
+}
+
+async fn run_member_alias(global: &GlobalOpts, command: MemberCommand) -> Result<(), CliError> {
+	let (_config_path, cfg) = load_config_store()?;
+	let effective = resolve_effective_config(global, &cfg)?;
+
+	let client = HttpClient::new(
+		&effective.host,
+		effective.token.clone(),
+		effective.timeout,
+		effective.retries,
+		global.dry_run,
+	)?;
+
+	match command {
+		MemberCommand::List(args) => member_list(global, &effective, &client, args).await,
+		MemberCommand::Get(args) => member_get(global, &effective, &client, args).await,
+		MemberCommand::Update(args) => member_update(global, &effective, &client, args).await,
+		MemberCommand::Authorize(args) => {
+			member_set_authorized(
+				global,
+				&effective,
+				&client,
+				args.network,
+				args.member,
+				args.org,
+				true,
+			)
+			.await
+		}
+		MemberCommand::Deauthorize(args) => {
+			member_set_authorized(
+				global,
+				&effective,
+				&client,
+				args.network,
+				args.member,
+				args.org,
+				false,
+			)
+			.await
+		}
+		MemberCommand::Delete(args) => member_delete(global, &effective, &client, args).await,
+	}
+}
+
+async fn run_network_member(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	command: NetworkMemberCommand,
+) -> Result<(), CliError> {
+	match command {
+		NetworkMemberCommand::List(args) => member_list(global, effective, client, args).await,
+		NetworkMemberCommand::Get(args) => member_get(global, effective, client, args).await,
+		NetworkMemberCommand::Update(args) => member_update(global, effective, client, args).await,
+		NetworkMemberCommand::Authorize(args) => {
+			member_set_authorized(
+				global,
+				effective,
+				client,
+				args.network,
+				args.member,
+				args.org,
+				true,
+			)
+			.await
+		}
+		NetworkMemberCommand::Deauthorize(args) => {
+			member_set_authorized(
+				global,
+				effective,
+				client,
+				args.network,
+				args.member,
+				args.org,
+				false,
+			)
+			.await
+		}
+		NetworkMemberCommand::Delete(args) => member_delete(global, effective, client, args).await,
+	}
+}
+
+async fn member_list(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	args: crate::cli::MemberListArgs,
+) -> Result<(), CliError> {
+	let org = args.org.or(effective.org.clone());
+	let org_id = match org {
+		Some(ref org) => Some(resolve_org_id(client, org).await?),
+		None => None,
+	};
+
+	let network_id = resolve_network_id(client, org_id.as_deref(), &args.network).await?;
+	let path = match org_id.as_deref() {
+		Some(org_id) => format!("/api/v1/org/{org_id}/network/{network_id}/member"),
+		None => format!("/api/v1/network/{network_id}/member"),
+	};
+
+	let mut response = client
+		.request_json(Method::GET, &path, None, Default::default(), true)
+		.await?;
+
+	if args.authorized || args.unauthorized || args.name.is_some() || args.id.is_some() {
+		let Some(items) = response.as_array() else {
+			return Err(CliError::InvalidArgument("expected array response".to_string()));
+		};
+
+		let needle_name = args.name.as_deref().map(|s| s.to_ascii_lowercase());
+		let needle_id = args.id.as_deref();
+
+		let filtered: Vec<Value> = items
+			.iter()
+			.filter(|item| {
+				if args.authorized {
+					if item.get("authorized").and_then(|v| v.as_bool()) != Some(true) {
+						return false;
+					}
+				}
+				if args.unauthorized {
+					if item.get("authorized").and_then(|v| v.as_bool()) != Some(false) {
+						return false;
+					}
+				}
+				if let Some(ref needle) = needle_name {
+					let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+					if !name.to_ascii_lowercase().contains(needle) {
+						return false;
+					}
+				}
+				if let Some(needle) = needle_id {
+					let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+					if id != needle {
+						return false;
+					}
+				}
+				true
+			})
+			.cloned()
+			.collect();
+
+		response = Value::Array(filtered);
+	}
+
+	output::print_value(&response, effective.output, global.no_color)?;
+	Ok(())
+}
+
+async fn member_get(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	args: crate::cli::MemberGetArgs,
+) -> Result<(), CliError> {
+	let org = args.org.or(effective.org.clone());
+	let org_id = match org {
+		Some(ref org) => Some(resolve_org_id(client, org).await?),
+		None => None,
+	};
+
+	let network_id = resolve_network_id(client, org_id.as_deref(), &args.network).await?;
+
+	let response = if let Some(org_id) = org_id.as_deref() {
+		let path = format!("/api/v1/org/{org_id}/network/{network_id}/member/{}", args.member);
+		client
+			.request_json(Method::GET, &path, None, Default::default(), true)
+			.await?
+	} else {
+		let path = format!("/api/v1/network/{network_id}/member");
+		let list = client
+			.request_json(Method::GET, &path, None, Default::default(), true)
+			.await?;
+
+		let Some(items) = list.as_array() else {
+			return Err(CliError::InvalidArgument("expected array response".to_string()));
+		};
+
+		items
+			.iter()
+			.find(|item| item.get("id").and_then(|v| v.as_str()) == Some(args.member.as_str()))
+			.cloned()
+			.ok_or(CliError::HttpStatus {
+				status: reqwest::StatusCode::NOT_FOUND,
+				message: "member not found".to_string(),
+				body: None,
+			})?
+	};
+
+	print_human_or_machine(&response, effective.output, global.no_color)?;
+	Ok(())
+}
+
+async fn member_update(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	args: crate::cli::MemberUpdateArgs,
+) -> Result<(), CliError> {
+	let org = args.org.or(effective.org.clone());
+	let org_id = match org {
+		Some(ref org) => Some(resolve_org_id(client, org).await?),
+		None => None,
+	};
+
+	let network_id = resolve_network_id(client, org_id.as_deref(), &args.network).await?;
+
+	let body = if let Some(body) = args.body {
+		serde_json::from_str::<Value>(&body)
+			.map_err(|err| CliError::InvalidArgument(format!("invalid --body json: {err}")))?
+	} else if let Some(path) = args.body_file {
+		let text = std::fs::read_to_string(&path)?;
+		serde_json::from_str::<Value>(&text)
+			.map_err(|err| CliError::InvalidArgument(format!("invalid --body-file json: {err}")))?
+	} else {
+		let mut map = serde_json::Map::new();
+		if let Some(name) = args.name {
+			map.insert("name".to_string(), Value::String(name));
+		}
+		if org_id.is_none() {
+			if let Some(description) = args.description {
+				map.insert("description".to_string(), Value::String(description));
+			}
+		}
+		if args.authorized {
+			map.insert("authorized".to_string(), Value::Bool(true));
+		} else if args.unauthorized {
+			map.insert("authorized".to_string(), Value::Bool(false));
+		}
+
+		if map.is_empty() {
+			return Err(CliError::InvalidArgument(
+				"no update fields provided (use flags or --body/--body-file)".to_string(),
+			));
+		}
+		Value::Object(map)
+	};
+
+	let path = match org_id.as_deref() {
+		Some(org_id) => format!(
+			"/api/v1/org/{org_id}/network/{network_id}/member/{}",
+			args.member
+		),
+		None => format!("/api/v1/network/{network_id}/member/{}", args.member),
+	};
+
+	let response = client
+		.request_json(Method::POST, &path, Some(body), Default::default(), true)
+		.await?;
+
+	print_human_or_machine(&response, effective.output, global.no_color)?;
+	Ok(())
+}
+
+async fn member_set_authorized(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	network: String,
+	member: String,
+	org: Option<String>,
+	authorized: bool,
+) -> Result<(), CliError> {
+	let update = crate::cli::MemberUpdateArgs {
+		network,
+		member,
+		org,
+		name: None,
+		description: None,
+		authorized,
+		unauthorized: !authorized,
+		body: None,
+		body_file: None,
+	};
+	member_update(global, effective, client, update).await
+}
+
+async fn member_delete(
+	global: &GlobalOpts,
+	effective: &crate::context::EffectiveConfig,
+	client: &HttpClient,
+	args: crate::cli::MemberDeleteArgs,
+) -> Result<(), CliError> {
+	let org = args.org.or(effective.org.clone());
+	let org_id = match org {
+		Some(ref org) => Some(resolve_org_id(client, org).await?),
+		None => None,
+	};
+
+	let network_id = resolve_network_id(client, org_id.as_deref(), &args.network).await?;
+
+	let prompt = format!(
+		"Delete (stash) member '{}' from network '{}'? ",
+		args.member, network_id
+	);
+	if !confirm(global, &prompt)? {
+		return Ok(());
+	}
+
+	let path = match org_id.as_deref() {
+		Some(org_id) => format!(
+			"/api/v1/org/{org_id}/network/{network_id}/member/{}",
+			args.member
+		),
+		None => format!("/api/v1/network/{network_id}/member/{}", args.member),
+	};
+
+	let response = client
+		.request_json(Method::DELETE, &path, None, Default::default(), true)
+		.await?;
+	print_human_or_machine(&response, effective.output, global.no_color)?;
+	Ok(())
+}
+
+fn confirm(global: &GlobalOpts, prompt: &str) -> Result<bool, CliError> {
+	if global.dry_run {
+		return Ok(true);
+	}
+	if global.yes {
+		return Ok(true);
+	}
+	if global.quiet {
+		return Err(CliError::InvalidArgument(
+			"refusing to prompt in --quiet mode (pass --yes)".to_string(),
+		));
+	}
+
+	eprint!("{prompt}[y/N]: ");
+	io::stderr().flush()?;
+
+	let mut input = String::new();
+	io::stdin().read_line(&mut input)?;
+	let input = input.trim().to_ascii_lowercase();
+	Ok(matches!(input.as_str(), "y" | "yes"))
 }
 
 fn load_config_store() -> Result<(PathBuf, Config), CliError> {

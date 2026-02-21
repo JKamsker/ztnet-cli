@@ -11,7 +11,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Implement `user create`
 - [x] Implement `org` commands
 - [x] Implement `network` commands
-- [ ] Implement `network member` commands + `member` alias
+- [x] Implement `network member` commands + `member` alias
 - [ ] Implement `stats`, `planet`, and `export hosts`
 - [ ] Implement `api` escape hatch and `trpc` experimental commands
 - [ ] Add Docker-based local ZTNet test harness + run CLI smoke test
