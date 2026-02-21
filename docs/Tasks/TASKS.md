@@ -8,7 +8,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Implement HTTP client (auth header, retries/backoff, timeout, dry-run, exit codes)
 - [x] Implement output formats + logging flags (`--json`, `--output`, `--quiet`, `-v`, `--no-color`)
 - [x] Implement `auth` and `config` commands
-- [ ] Implement `user create`
+- [x] Implement `user create`
 - [ ] Implement `org` commands
 - [ ] Implement `network` commands
 - [ ] Implement `network member` commands + `member` alias

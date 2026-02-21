@@ -13,7 +13,10 @@ async fn main() {
 	let cli = cli::Cli::parse();
 
 	if let Err(err) = app::run(cli).await {
-		eprintln!("{err}");
-		std::process::exit(err.exit_code());
+		let code = err.exit_code();
+		if code != 0 {
+			eprintln!("{err}");
+		}
+		std::process::exit(code);
 	}
 }
