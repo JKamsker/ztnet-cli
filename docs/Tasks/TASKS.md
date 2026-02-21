@@ -7,7 +7,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Implement config file + profiles + precedence (flags > env > config > defaults)
 - [x] Implement HTTP client (auth header, retries/backoff, timeout, dry-run, exit codes)
 - [x] Implement output formats + logging flags (`--json`, `--output`, `--quiet`, `-v`, `--no-color`)
-- [ ] Implement `auth` and `config` commands
+- [x] Implement `auth` and `config` commands
 - [ ] Implement `user create`
 - [ ] Implement `org` commands
 - [ ] Implement `network` commands

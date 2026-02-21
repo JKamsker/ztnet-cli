@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -92,8 +92,35 @@ impl Config {
 }
 
 pub fn default_config_path() -> Result<PathBuf, ConfigError> {
-	let dirs = ProjectDirs::from("", "", "ztnet").ok_or(ConfigError::NoConfigDir)?;
-	Ok(dirs.config_dir().join("config.toml"))
+	let dir = default_config_dir()?;
+	Ok(dir.join("config.toml"))
+}
+
+fn default_config_dir() -> Result<PathBuf, ConfigError> {
+	#[cfg(target_os = "windows")]
+	{
+		let app_data = env::var_os("APPDATA").ok_or(ConfigError::NoConfigDir)?;
+		return Ok(PathBuf::from(app_data).join("ztnet"));
+	}
+
+	#[cfg(target_os = "macos")]
+	{
+		let home = env::var_os("HOME").ok_or(ConfigError::NoConfigDir)?;
+		return Ok(PathBuf::from(home)
+			.join("Library")
+			.join("Application Support")
+			.join("ztnet"));
+	}
+
+	#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+	{
+		if let Some(xdg) = env::var_os("XDG_CONFIG_HOME") {
+			return Ok(PathBuf::from(xdg).join("ztnet"));
+		}
+
+		let home = env::var_os("HOME").ok_or(ConfigError::NoConfigDir)?;
+		Ok(PathBuf::from(home).join(".config").join("ztnet"))
+	}
 }
 
 pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
@@ -127,4 +154,3 @@ pub fn save_config(path: &Path, config: &Config) -> Result<(), ConfigError> {
 		source,
 	})
 }
-

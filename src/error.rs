@@ -16,6 +16,9 @@ pub enum CliError {
 	#[error("invalid argument: {0}")]
 	InvalidArgument(String),
 
+	#[error("not implemented: {0}")]
+	Unimplemented(&'static str),
+
 	#[error("dry-run: request printed")]
 	DryRunPrinted,
 
@@ -59,4 +62,3 @@ impl CliError {
 		}
 	}
 }
-
