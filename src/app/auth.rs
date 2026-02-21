@@ -711,6 +711,51 @@ fn explicit_host_override(global: &GlobalOpts) -> Option<String> {
 		.or_else(|| env::var("API_ADDRESS").ok())
 }
 
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::config::ProfileConfig;
+
+	#[test]
+	fn infer_profile_name_slugifies_host() {
+		let cfg = crate::config::Config::default();
+		assert_eq!(
+			infer_profile_name("https://ztnet.example.com", &cfg).unwrap(),
+			"ztnet-example-com"
+		);
+		assert_eq!(
+			infer_profile_name("http://localhost:3000", &cfg).unwrap(),
+			"localhost-3000"
+		);
+	}
+
+	#[test]
+	fn infer_profile_name_omits_default_port() {
+		let cfg = crate::config::Config::default();
+		assert_eq!(
+			infer_profile_name("https://example.com:443", &cfg).unwrap(),
+			"example-com"
+		);
+	}
+
+	#[test]
+	fn infer_profile_name_ensures_uniqueness() {
+		let mut cfg = crate::config::Config::default();
+		cfg.profiles.insert(
+			"localhost-3000".to_string(),
+			ProfileConfig {
+				host: Some("http://localhost:3000".to_string()),
+				..Default::default()
+			},
+		);
+
+		assert_eq!(
+			infer_profile_name("http://localhost:3000", &cfg).unwrap(),
+			"localhost-3000-2"
+		);
+	}
+}
+
 fn parse_error_from_location(location: &str) -> Option<String> {
 	let (_, query) = location.split_once('?')?;
 	for part in query.split('&') {

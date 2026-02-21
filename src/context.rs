@@ -257,3 +257,153 @@ fn select_profile_for_host(host_key: &str, config: &Config) -> Result<Option<Str
 	Ok(None)
 }
 
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::config::ProfileConfig;
+
+	fn base_global() -> GlobalOpts {
+		GlobalOpts {
+			host: None,
+			token: None,
+			profile: None,
+			org: None,
+			network: None,
+			json: false,
+			output: Some(OutputFormat::Json),
+			no_color: true,
+			quiet: true,
+			verbose: 0,
+			timeout: Some("30s".to_string()),
+			retries: Some(3),
+			dry_run: false,
+			yes: false,
+		}
+	}
+
+	#[test]
+	fn canonical_host_key_normalizes_basic_cases() {
+		assert_eq!(
+			canonical_host_key("https://Example.com/").unwrap(),
+			"https://example.com"
+		);
+		assert_eq!(
+			canonical_host_key("https://example.com:443").unwrap(),
+			"https://example.com"
+		);
+		assert_eq!(
+			canonical_host_key("http://example.com:80").unwrap(),
+			"http://example.com"
+		);
+		assert_eq!(
+			canonical_host_key("http://example.com:8080/").unwrap(),
+			"http://example.com:8080"
+		);
+	}
+
+	#[test]
+	fn canonical_host_key_normalizes_ipv6() {
+		assert_eq!(
+			canonical_host_key("http://[2001:db8::1]:3000/").unwrap(),
+			"http://[2001:db8::1]:3000"
+		);
+	}
+
+	#[test]
+	fn resolve_effective_config_selects_host_default_profile() {
+		let mut cfg = Config::default();
+		cfg.active_profile = Some("default".to_string());
+		cfg.profiles.insert(
+			"prod".to_string(),
+			ProfileConfig {
+				host: Some("https://ztnet.example.com".to_string()),
+				token: Some("prod-token".to_string()),
+				..Default::default()
+			},
+		);
+		cfg.host_defaults.insert(
+			"https://ztnet.example.com".to_string(),
+			"prod".to_string(),
+		);
+
+		let mut global = base_global();
+		global.host = Some("https://ztnet.example.com/".to_string());
+
+		let effective = resolve_effective_config(&global, &cfg).unwrap();
+		assert_eq!(effective.profile, "prod");
+		assert_eq!(effective.token.as_deref(), Some("prod-token"));
+	}
+
+	#[test]
+	fn resolve_effective_config_picks_first_profile_when_multiple_match() {
+		let mut cfg = Config::default();
+		cfg.profiles.insert(
+			"a".to_string(),
+			ProfileConfig {
+				host: Some("https://ztnet.example.com".to_string()),
+				token: Some("a-token".to_string()),
+				..Default::default()
+			},
+		);
+		cfg.profiles.insert(
+			"b".to_string(),
+			ProfileConfig {
+				host: Some("https://ztnet.example.com".to_string()),
+				token: Some("b-token".to_string()),
+				..Default::default()
+			},
+		);
+
+		let mut global = base_global();
+		global.host = Some("https://ztnet.example.com".to_string());
+
+		let effective = resolve_effective_config(&global, &cfg).unwrap();
+		assert_eq!(effective.profile, "a");
+		assert_eq!(effective.token.as_deref(), Some("a-token"));
+	}
+
+	#[test]
+	fn resolve_effective_config_drops_stored_creds_when_host_mismatch() {
+		let mut cfg = Config::default();
+		cfg.active_profile = Some("default".to_string());
+		cfg.profiles.insert(
+			"default".to_string(),
+			ProfileConfig {
+				host: Some("https://host-a.example.com".to_string()),
+				token: Some("a-token".to_string()),
+				..Default::default()
+			},
+		);
+
+		let mut global = base_global();
+		global.host = Some("https://host-b.example.com".to_string());
+
+		let effective = resolve_effective_config(&global, &cfg).unwrap();
+		assert_eq!(effective.profile, "default");
+		assert_eq!(effective.host, "https://host-b.example.com");
+		assert_eq!(effective.token, None);
+	}
+
+	#[test]
+	fn resolve_effective_config_errors_on_explicit_profile_host_mismatch() {
+		let mut cfg = Config::default();
+		cfg.profiles.insert(
+			"prod".to_string(),
+			ProfileConfig {
+				host: Some("https://host-a.example.com".to_string()),
+				..Default::default()
+			},
+		);
+
+		let mut global = base_global();
+		global.profile = Some("prod".to_string());
+		global.host = Some("https://host-b.example.com".to_string());
+
+		let err = resolve_effective_config(&global, &cfg).unwrap_err();
+		match err {
+			CliError::InvalidArgument(_) => {}
+			other => panic!("expected InvalidArgument, got {other:?}"),
+		}
+	}
+}
+
