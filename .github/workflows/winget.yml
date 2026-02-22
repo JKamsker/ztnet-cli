@@ -1,0 +1,34 @@
+name: WinGet
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  publish:
+    name: Open WinGet PR
+    runs-on: windows-latest
+
+    steps:
+      - name: Check token
+        id: token
+        shell: bash
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${WINGET_TOKEN:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "WINGET_TOKEN not set; skipping"
+          fi
+
+      - name: Publish to WinGet
+        if: ${{ steps.token.outputs.present == 'true' }}
+        uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: JKamsker.ZTNetCLI
+          installers-regex: 'x86_64-pc-windows-msvc\\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}
+
