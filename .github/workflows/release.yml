@@ -71,7 +71,6 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macos-14
-          - macos-13
 
     steps:
       - name: Checkout
