@@ -8,6 +8,7 @@ use crate::context::canonical_host_key;
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
 use crate::host::{api_base_candidates, normalize_host_input};
+use crate::multi_base;
 use crate::output;
 use reqwest::StatusCode;
 use url::Url;
@@ -391,20 +392,5 @@ async fn probe_ztnet_instance(client: &reqwest::Client, base: &str) -> Result<()
 }
 
 fn build_url_from_base(base: &str, path: &str) -> Result<Url, CliError> {
-	let mut base_url = Url::parse(base).map_err(|err| {
-		CliError::InvalidArgument(format!("invalid host url: {err}"))
-	})?;
-
-	base_url.set_query(None);
-	base_url.set_fragment(None);
-
-	let base_path = base_url.path();
-	if !base_path.ends_with('/') {
-		let mut new_path = base_path.to_string();
-		new_path.push('/');
-		base_url.set_path(&new_path);
-	}
-
-	let relative = path.trim().trim_start_matches('/');
-	Ok(base_url.join(relative)?)
+	multi_base::parse_normalize_and_join_url(base, path)
 }

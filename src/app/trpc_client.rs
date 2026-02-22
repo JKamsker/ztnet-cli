@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use bytes::Bytes;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, StatusCode};
 use serde_json::{json, Value};
@@ -55,7 +56,7 @@ impl TrpcClient {
 		let path = format!("api/trpc/{}?batch=1", procedure.trim());
 
 		let body = json!({ "0": { "json": input } });
-		let body_bytes = serde_json::to_vec(&body)?;
+		let body_bytes = Bytes::from(serde_json::to_vec(&body)?);
 
 		let mut headers = HeaderMap::new();
 		headers.insert("accept", HeaderValue::from_static("application/json"));
@@ -70,43 +71,23 @@ impl TrpcClient {
 			);
 		}
 
-		let base_idx = self.active_base.load(Ordering::Relaxed);
-		let url = self.build_url_for_base(base_idx, &path)?;
-
 		if self.dry_run {
+			let base_idx = self.active_base.load(Ordering::Relaxed);
+			let url = self.build_url_for_base(base_idx, &path)?;
 			print_dry_run(&Method::POST, &url, &headers, &body);
 			return Err(CliError::DryRunPrinted);
 		}
 
-		let result = self
-			.call_with_url(url, &headers, &body_bytes)
-			.await;
-
-		if self.bases.len() < 2 {
-			return result;
-		}
-
-		match result {
-			Ok(value) => Ok(value),
-			Err(err) if should_try_host_autofix(&err) => {
-				for idx in 0..self.bases.len() {
-					if idx == base_idx {
-						continue;
-					}
-
-					let url = self.build_url_for_base(idx, &path)?;
-					let attempt = self.call_with_url(url, &headers, &body_bytes).await;
-					if let Ok(value) = attempt {
-						self.active_base.store(idx, Ordering::Relaxed);
-						self.maybe_warn_host_autofix(idx);
-						return Ok(value);
-					}
-				}
-
-				Err(err)
-			}
-			Err(err) => Err(err),
-		}
+		multi_base::try_with_base_fallback(
+			&self.bases,
+			&self.active_base,
+			&path,
+			false,
+			should_try_host_autofix,
+			|url| self.call_with_url(url, &headers, body_bytes.clone()),
+			|idx| self.maybe_warn_host_autofix(idx),
+		)
+		.await
 	}
 
 	fn build_url_for_base(&self, base_idx: usize, path: &str) -> Result<Url, CliError> {
@@ -127,7 +108,7 @@ impl TrpcClient {
 		&self,
 		url: Url,
 		headers: &HeaderMap,
-		body_bytes: &[u8],
+		body_bytes: Bytes,
 	) -> Result<Value, CliError> {
 		let mut backoff = Duration::from_millis(200);
 		for attempt in 0..=self.retries {
@@ -135,7 +116,7 @@ impl TrpcClient {
 				.client
 				.request(Method::POST, url.clone())
 				.headers(headers.clone())
-				.body(body_bytes.to_vec());
+				.body(body_bytes.clone());
 
 			match request.send().await {
 				Ok(resp) => {
@@ -146,7 +127,7 @@ impl TrpcClient {
 						.and_then(|v| v.to_str().ok())
 						.and_then(|s| s.trim().parse::<u64>().ok())
 						.map(Duration::from_secs);
-					let bytes = resp.bytes().await?.to_vec();
+					let bytes = resp.bytes().await?;
 
 					if should_retry_status(status) && attempt < self.retries {
 						if status == StatusCode::TOO_MANY_REQUESTS {
@@ -158,7 +139,7 @@ impl TrpcClient {
 						continue;
 					}
 
-					return parse_trpc_http_response(status, &bytes);
+					return parse_trpc_http_response(status, bytes.as_ref());
 				}
 				Err(err) => {
 					if attempt < self.retries && should_retry_error(&err) {

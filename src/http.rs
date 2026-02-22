@@ -112,17 +112,15 @@ impl HttpClient {
 		include_auth: bool,
 	) -> Result<Value, CliError> {
 		let path = path.trim();
-		let is_absolute = path.starts_with("http://") || path.starts_with("https://");
 
 		let body_bytes = match body {
 			Some(v) => Some(Bytes::from(serde_json::to_vec(&v)?)),
 			None => None,
 		};
 
-		let base_idx = self.active_base.load(Ordering::Relaxed);
-		let url = self.build_url_for_base(base_idx, path)?;
-
 		if self.dry_run {
+			let base_idx = self.active_base.load(Ordering::Relaxed);
+			let url = self.build_url_for_base(base_idx, path)?;
 			print_dry_run(
 				&method,
 				&url,
@@ -133,43 +131,16 @@ impl HttpClient {
 			return Err(CliError::DryRunPrinted);
 		}
 
-		let result = self
-			.request_json_with_url(method.clone(), url, body_bytes.clone(), &headers, include_auth)
-			.await;
-
-		if is_absolute || self.bases.len() < 2 {
-			return result;
-		}
-
-		match result {
-			Ok(value) => Ok(value),
-			Err(err) if should_try_host_autofix(&err) => {
-				for idx in 0..self.bases.len() {
-					if idx == base_idx {
-						continue;
-					}
-
-					let url = self.build_url_for_base(idx, path)?;
-					let attempt = self
-						.request_json_with_url(
-							method.clone(),
-							url,
-							body_bytes.clone(),
-							&headers,
-							include_auth,
-						)
-						.await;
-					if let Ok(value) = attempt {
-						self.active_base.store(idx, Ordering::Relaxed);
-						self.maybe_warn_host_autofix(idx);
-						return Ok(value);
-					}
-				}
-
-				Err(err)
-			}
-			Err(err) => Err(err),
-		}
+		multi_base::try_with_base_fallback(
+			&self.bases,
+			&self.active_base,
+			path,
+			true,
+			should_try_host_autofix,
+			|url| self.request_json_with_url(method.clone(), url, body_bytes.clone(), &headers, include_auth),
+			|idx| self.maybe_warn_host_autofix(idx),
+		)
+		.await
 	}
 
 	pub async fn request_bytes(
@@ -182,14 +153,12 @@ impl HttpClient {
 		content_type: Option<&str>,
 	) -> Result<Vec<u8>, CliError> {
 		let path = path.trim();
-		let is_absolute = path.starts_with("http://") || path.starts_with("https://");
 
 		let body_bytes = body.map(Bytes::from);
 
-		let base_idx = self.active_base.load(Ordering::Relaxed);
-		let url = self.build_url_for_base(base_idx, path)?;
-
 		if self.dry_run {
+			let base_idx = self.active_base.load(Ordering::Relaxed);
+			let url = self.build_url_for_base(base_idx, path)?;
 			print_dry_run(
 				&method,
 				&url,
@@ -200,51 +169,25 @@ impl HttpClient {
 			return Err(CliError::DryRunPrinted);
 		}
 
-		let result = self
-			.request_bytes_with_url(
-				method.clone(),
-				url,
-				body_bytes.clone(),
-				&headers,
-				include_auth,
-				content_type,
-			)
-			.await;
-
-		if is_absolute || self.bases.len() < 2 {
-			return result;
-		}
-
-		match result {
-			Ok(bytes) => Ok(bytes),
-			Err(err) if should_try_host_autofix(&err) => {
-				for idx in 0..self.bases.len() {
-					if idx == base_idx {
-						continue;
-					}
-
-					let url = self.build_url_for_base(idx, path)?;
-					let attempt = self
-						.request_bytes_with_url(
-							method.clone(),
-							url,
-							body_bytes.clone(),
-							&headers,
-							include_auth,
-							content_type,
-						)
-						.await;
-					if let Ok(bytes) = attempt {
-						self.active_base.store(idx, Ordering::Relaxed);
-						self.maybe_warn_host_autofix(idx);
-						return Ok(bytes);
-					}
-				}
-
-				Err(err)
-			}
-			Err(err) => Err(err),
-		}
+		multi_base::try_with_base_fallback(
+			&self.bases,
+			&self.active_base,
+			path,
+			true,
+			should_try_host_autofix,
+			|url| {
+				self.request_bytes_with_url(
+					method.clone(),
+					url,
+					body_bytes.clone(),
+					&headers,
+					include_auth,
+					content_type,
+				)
+			},
+			|idx| self.maybe_warn_host_autofix(idx),
+		)
+		.await
 	}
 
 	async fn request_json_with_url(
