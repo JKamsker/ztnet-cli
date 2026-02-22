@@ -28,5 +28,5 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Validate token by default in `auth set-token` (`--no-validate` bypass)
 - [x] Runtime host auto-fix (toggle `/api`) + big warning banner
 - [x] Keep `host_defaults` consistent when host set/unset
-- [ ] Add unit tests for host normalization/candidates
+- [x] Add unit tests for host normalization/candidates
 - [ ] Update docs (README + `docs/commands.md` + `docs/configuration.md`)

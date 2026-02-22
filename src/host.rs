@@ -99,6 +99,28 @@ mod tests {
 	use super::*;
 
 	#[test]
+	fn api_base_candidates_adds_api_when_missing() {
+		assert_eq!(
+			api_base_candidates("https://example.com"),
+			vec![
+				"https://example.com".to_string(),
+				"https://example.com/api".to_string()
+			]
+		);
+	}
+
+	#[test]
+	fn api_base_candidates_strips_api_when_present() {
+		assert_eq!(
+			api_base_candidates("https://example.com/api"),
+			vec![
+				"https://example.com/api".to_string(),
+				"https://example.com".to_string()
+			]
+		);
+	}
+
+	#[test]
 	fn normalize_host_input_adds_default_scheme() {
 		assert_eq!(
 			normalize_host_input("ztnet.example.com/api").unwrap(),
@@ -133,6 +155,15 @@ mod tests {
 	#[test]
 	fn normalize_host_input_rejects_non_http_schemes() {
 		let err = normalize_host_input("ftp://example.com").unwrap_err();
+		match err {
+			CliError::InvalidArgument(_) => {}
+			other => panic!("expected InvalidArgument, got {other:?}"),
+		}
+	}
+
+	#[test]
+	fn normalize_host_input_rejects_credentials() {
+		let err = normalize_host_input("https://user:pass@example.com").unwrap_err();
 		match err {
 			CliError::InvalidArgument(_) => {}
 			other => panic!("expected InvalidArgument, got {other:?}"),
