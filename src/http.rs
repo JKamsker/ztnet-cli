@@ -26,7 +26,8 @@ impl HttpClient {
 		retries: u32,
 		dry_run: bool,
 	) -> Result<Self, CliError> {
-		let base_url = Url::parse(base_url)?;
+		let mut base_url = Url::parse(base_url)?;
+		normalize_base_url_for_join(&mut base_url);
 		let client = reqwest::Client::builder().timeout(timeout).build()?;
 		Ok(Self {
 			base_url,
@@ -38,10 +39,13 @@ impl HttpClient {
 	}
 
 	pub fn build_url(&self, path: &str) -> Result<Url, CliError> {
+		let path = path.trim();
 		if path.starts_with("http://") || path.starts_with("https://") {
 			return Ok(Url::parse(path)?);
 		}
-		Ok(self.base_url.join(path)?)
+
+		let relative = path.strip_prefix('/').unwrap_or(path);
+		Ok(self.base_url.join(relative)?)
 	}
 
 	pub async fn request_json(
@@ -209,6 +213,18 @@ impl HttpClient {
 	}
 }
 
+fn normalize_base_url_for_join(url: &mut Url) {
+	url.set_query(None);
+	url.set_fragment(None);
+
+	let path = url.path();
+	if !path.ends_with('/') {
+		let mut new_path = path.to_string();
+		new_path.push('/');
+		url.set_path(&new_path);
+	}
+}
+
 fn should_retry_status(status: StatusCode) -> bool {
 	status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
@@ -221,6 +237,42 @@ fn parse_retry_after(resp: &reqwest::Response) -> Option<Duration> {
 	let value = resp.headers().get("retry-after")?.to_str().ok()?;
 	let secs = value.trim().parse::<u64>().ok()?;
 	Some(Duration::from_secs(secs))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn build_url_preserves_base_path_prefix() {
+		let client = HttpClient::new(
+			"https://example.com/api",
+			None,
+			Duration::from_secs(1),
+			0,
+			true,
+		)
+		.unwrap();
+
+		let url = client.build_url("/api/v1/network").unwrap();
+		assert_eq!(url.as_str(), "https://example.com/api/api/v1/network");
+	}
+
+	#[test]
+	fn build_url_works_without_path_prefix() {
+		let client =
+			HttpClient::new("https://example.com", None, Duration::from_secs(1), 0, true).unwrap();
+		let url = client.build_url("/api/v1/network").unwrap();
+		assert_eq!(url.as_str(), "https://example.com/api/v1/network");
+	}
+
+	#[test]
+	fn build_url_allows_absolute_urls() {
+		let client =
+			HttpClient::new("https://example.com", None, Duration::from_secs(1), 0, true).unwrap();
+		let url = client.build_url("https://other.example.com/x").unwrap();
+		assert_eq!(url.as_str(), "https://other.example.com/x");
+	}
 }
 
 fn print_dry_run(

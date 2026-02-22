@@ -21,7 +21,7 @@ Source spec: `docs/Tasks/Initial.md`
 ## Robust host config + validation
 
 - [x] Create task checklist
-- [ ] Support base URLs with path prefixes (`https://host/prefix`)
+- [x] Support base URLs with path prefixes (`https://host/prefix`)
 - [ ] Add host normalization helpers (smart scheme, trim, trailing slash)
 - [ ] Add `ztnet config set host <URL>` alias + `config set --no-validate`
 - [ ] Validate host as ZTNet instance on set (try `/api` variants)

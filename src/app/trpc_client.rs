@@ -24,7 +24,8 @@ impl TrpcClient {
 		retries: u32,
 		dry_run: bool,
 	) -> Result<Self, CliError> {
-		let base_url = Url::parse(base_url)?;
+		let mut base_url = Url::parse(base_url)?;
+		normalize_base_url_for_join(&mut base_url);
 		let client = reqwest::Client::builder().timeout(timeout).build()?;
 		Ok(Self {
 			base_url,
@@ -41,7 +42,7 @@ impl TrpcClient {
 	}
 
 	pub(super) async fn call(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
-		let path = format!("/api/trpc/{}?batch=1", procedure.trim());
+		let path = format!("api/trpc/{}?batch=1", procedure.trim());
 		let url = self.base_url.join(&path)?;
 
 		let body = json!({ "0": { "json": input } });
@@ -108,6 +109,37 @@ impl TrpcClient {
 		}
 
 		Err(CliError::RateLimited)
+	}
+}
+
+fn normalize_base_url_for_join(url: &mut Url) {
+	url.set_query(None);
+	url.set_fragment(None);
+
+	let path = url.path();
+	if !path.ends_with('/') {
+		let mut new_path = path.to_string();
+		new_path.push('/');
+		url.set_path(&new_path);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn trpc_join_preserves_base_path_prefix() {
+		let client = TrpcClient::new(
+			"https://example.com/api",
+			Duration::from_secs(1),
+			0,
+			true,
+		)
+		.unwrap();
+
+		let url = client.base_url.join("api/trpc/foo?batch=1").unwrap();
+		assert_eq!(url.as_str(), "https://example.com/api/api/trpc/foo?batch=1");
 	}
 }
 
