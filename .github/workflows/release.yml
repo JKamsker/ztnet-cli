@@ -70,7 +70,8 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
-          - macos-latest
+          - macos-14
+          - macos-13
 
     steps:
       - name: Checkout
@@ -176,6 +177,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/gha/release/create_release.py --version "${{ steps.version.outputs.version }}"
+
+      - name: Check npm token
+        id: npm
+        if: ${{ steps.check.outputs.exists == 'false' }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: python scripts/gha/common/check_env_output.py --env-var NPM_TOKEN --missing-message "NPM_TOKEN not set; skipping npm publish"
+
+      - name: Setup Node
+        if: ${{ steps.check.outputs.exists == 'false' && steps.npm.outputs.present == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify npm package version
+        if: ${{ steps.check.outputs.exists == 'false' && steps.npm.outputs.present == 'true' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: node npm/scripts/verify-version.js
+
+      - name: Publish to npm
+        if: ${{ steps.check.outputs.exists == 'false' && steps.npm.outputs.present == 'true' }}
+        working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
 
   winget:
     name: Open WinGet PR

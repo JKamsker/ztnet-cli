@@ -1,3 +1,7 @@
 /target
 __pycache__/
 *.pyc
+/npm/node_modules/
+/npm/vendor/
+/npm/artifacts/
+/npm/package-lock.json

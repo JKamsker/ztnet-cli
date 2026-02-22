@@ -1,0 +1,36 @@
+{
+  "name": "ztnet-cli",
+  "version": "0.1.9",
+  "description": "ZTNet CLI — manage ZeroTier networks via ZTNet",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JKamsker/ztnet-cli.git"
+  },
+  "homepage": "https://github.com/JKamsker/ztnet-cli",
+  "bugs": {
+    "url": "https://github.com/JKamsker/ztnet-cli/issues"
+  },
+  "bin": {
+    "ztnet": "bin/ztnet.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "dependencies": {
+    "extract-zip": "^2.0.1",
+    "tar": "^6.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

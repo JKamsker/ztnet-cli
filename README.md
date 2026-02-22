@@ -27,6 +27,10 @@ $ ztnet network list --json
 ### Install
 
 ```bash
+# Install via npm (prebuilt binaries)
+npm install -g ztnet-cli
+ztnet --help
+
 # Clone and build from source
 git clone https://github.com/JKamsker/ztnet-cli.git
 cd ztnet-cli
