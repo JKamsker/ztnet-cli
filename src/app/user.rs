@@ -5,7 +5,7 @@ use crate::cli::{GlobalOpts, OutputFormat, UserCommand};
 use crate::config;
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::{load_config_store, print_kv};
@@ -35,6 +35,7 @@ pub(super) async fn run(global: &GlobalOpts, command: UserCommand) -> Result<(),
 				effective.timeout,
 				effective.retries,
 				global.dry_run,
+				ClientUi::from_context(global, &effective),
 			)?;
 
 			let include_auth = !args.no_auth && effective.token.is_some();
@@ -87,4 +88,3 @@ pub(super) async fn run(global: &GlobalOpts, command: UserCommand) -> Result<(),
 		}
 	}
 }
-

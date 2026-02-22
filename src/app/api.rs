@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::cli::{ApiCommand, GlobalOpts};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::load_config_store;
@@ -22,6 +22,7 @@ pub(super) async fn run(global: &GlobalOpts, command: ApiCommand) -> Result<(), 
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::from_context(global, &effective),
 	)?;
 
 	match command {
@@ -166,4 +167,3 @@ fn parse_method(raw: &str) -> Result<Method, CliError> {
 	Method::from_bytes(raw.as_bytes())
 		.map_err(|_| CliError::InvalidArgument(format!("invalid http method: {raw}")))
 }
-

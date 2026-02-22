@@ -35,11 +35,13 @@ Manage API tokens, profiles, and connectivity.
 
 Save an API token to a config profile (host-bound).
 
+By default, `auth set-token` validates the token against the server. Use `--no-validate` to skip the check.
+
 Before storing a token, configure the profile’s host (or pass `--host` / set `ZTNET_HOST`). This prevents accidentally reusing the same token across different ZTNet instances.
 
 ```bash
 # Recommended: set host first, then store token
-ztnet config set profiles.default.host https://ztnet.example.com
+ztnet config set host https://ztnet.example.com
 ztnet auth set-token <TOKEN>
 
 # Or read token from stdin (avoids shell history)
@@ -49,13 +51,14 @@ ztnet auth set-token --stdin
 ztnet --host https://ztnet.example.com auth set-token <TOKEN>
 
 # Explicit profile
-ztnet config set profiles.prod.host https://ztnet.prod.example.com
+ztnet --profile prod config set host https://ztnet.prod.example.com
 ztnet --profile prod auth set-token <TOKEN>
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--stdin` | Read the token from standard input instead of an argument |
+| `--no-validate` | Skip token validation against the server |
 | `--profile <NAME>` | Profile to store the token under (global flag) |
 
 ### auth unset-token
@@ -105,7 +108,7 @@ ztnet auth profiles use production
 Log in with email/password and store a NextAuth session cookie in the selected profile (used by session-auth commands like `admin` and some `trpc` operations).
 
 ```bash
-ztnet config set profiles.default.host https://ztnet.example.com
+ztnet config set host https://ztnet.example.com
 ztnet auth login --email user@example.com --password "..."
 
 ztnet --profile prod --host https://ztnet.prod.example.com auth login --email user@example.com --password "..."
@@ -158,9 +161,14 @@ ztnet config get profiles.default.host
 
 Write a config value.
 
+When setting a host (`config set host ...` or `profiles.<name>.host`), the URL is normalized and validated by default (and can correct a missing/extra `/api`). Use `--no-validate` to skip the server check. At runtime, the CLI can also auto-retry with/without `/api` and print a banner with a suggested fix (unless `--quiet`).
+
 ```bash
-ztnet config set profiles.default.host https://ztnet.example.com
+ztnet config set host https://ztnet.example.com
 ztnet config set profiles.default.output json
+
+# Skip host validation (format is still normalized)
+ztnet config set host https://ztnet.example.com --no-validate
 ```
 
 ### config unset

@@ -1,5 +1,7 @@
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use bytes::Bytes;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, StatusCode};
 use serde_json::{json, Value};
@@ -7,14 +9,19 @@ use url::Url;
 
 use crate::context::EffectiveConfig;
 use crate::error::CliError;
+use crate::http::{print_host_autofix_banner, ClientUi};
+use crate::multi_base::{self, BaseCandidate};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct TrpcClient {
-	base_url: Url,
+	bases: Vec<BaseCandidate>,
+	active_base: AtomicUsize,
+	warned_autofix: AtomicBool,
 	retries: u32,
 	dry_run: bool,
 	client: reqwest::Client,
 	cookie: Option<String>,
+	ui: ClientUi,
 }
 
 impl TrpcClient {
@@ -23,15 +30,20 @@ impl TrpcClient {
 		timeout: Duration,
 		retries: u32,
 		dry_run: bool,
+		ui: ClientUi,
 	) -> Result<Self, CliError> {
-		let base_url = Url::parse(base_url)?;
+		let bases = multi_base::build_base_candidates(base_url)?;
+
 		let client = reqwest::Client::builder().timeout(timeout).build()?;
 		Ok(Self {
-			base_url,
+			bases,
+			active_base: AtomicUsize::new(0),
+			warned_autofix: AtomicBool::new(false),
 			retries,
 			dry_run,
 			client,
 			cookie: None,
+			ui,
 		})
 	}
 
@@ -41,11 +53,10 @@ impl TrpcClient {
 	}
 
 	pub(super) async fn call(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
-		let path = format!("/api/trpc/{}?batch=1", procedure.trim());
-		let url = self.base_url.join(&path)?;
+		let path = format!("api/trpc/{}?batch=1", procedure.trim());
 
 		let body = json!({ "0": { "json": input } });
-		let body_bytes = serde_json::to_vec(&body)?;
+		let body_bytes = Bytes::from(serde_json::to_vec(&body)?);
 
 		let mut headers = HeaderMap::new();
 		headers.insert("accept", HeaderValue::from_static("application/json"));
@@ -61,10 +72,44 @@ impl TrpcClient {
 		}
 
 		if self.dry_run {
+			let base_idx = self.active_base.load(Ordering::Relaxed);
+			let url = self.build_url_for_base(base_idx, &path)?;
 			print_dry_run(&Method::POST, &url, &headers, &body);
 			return Err(CliError::DryRunPrinted);
 		}
 
+		multi_base::try_with_base_fallback(
+			&self.bases,
+			&self.active_base,
+			&path,
+			false,
+			should_try_host_autofix,
+			|url| self.call_with_url(url, &headers, body_bytes.clone()),
+			|idx| self.maybe_warn_host_autofix(idx),
+		)
+		.await
+	}
+
+	fn build_url_for_base(&self, base_idx: usize, path: &str) -> Result<Url, CliError> {
+		multi_base::build_url_for_base(&self.bases, base_idx, path, false)
+	}
+
+	fn maybe_warn_host_autofix(&self, active_idx: usize) {
+		multi_base::maybe_warn_host_autofix(
+			self.ui.quiet,
+			&self.warned_autofix,
+			&self.bases,
+			active_idx,
+			|configured, using| print_host_autofix_banner(&self.ui, configured, using),
+		);
+	}
+
+	async fn call_with_url(
+		&self,
+		url: Url,
+		headers: &HeaderMap,
+		body_bytes: Bytes,
+	) -> Result<Value, CliError> {
 		let mut backoff = Duration::from_millis(200);
 		for attempt in 0..=self.retries {
 			let request = self
@@ -82,7 +127,7 @@ impl TrpcClient {
 						.and_then(|v| v.to_str().ok())
 						.and_then(|s| s.trim().parse::<u64>().ok())
 						.map(Duration::from_secs);
-					let bytes = resp.bytes().await?.to_vec();
+					let bytes = resp.bytes().await?;
 
 					if should_retry_status(status) && attempt < self.retries {
 						if status == StatusCode::TOO_MANY_REQUESTS {
@@ -94,7 +139,7 @@ impl TrpcClient {
 						continue;
 					}
 
-					return parse_trpc_http_response(status, &bytes);
+					return parse_trpc_http_response(status, bytes.as_ref());
 				}
 				Err(err) => {
 					if attempt < self.retries && should_retry_error(&err) {
@@ -108,6 +153,34 @@ impl TrpcClient {
 		}
 
 		Err(CliError::RateLimited)
+	}
+}
+
+fn should_try_host_autofix(err: &CliError) -> bool {
+	if multi_base::should_try_host_autofix_basic(err) {
+		return true;
+	}
+
+	matches!(err, CliError::HttpStatus { message, .. } if message == "invalid json response")
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn trpc_join_preserves_base_path_prefix() {
+		let client = TrpcClient::new(
+			"https://example.com/api",
+			Duration::from_secs(1),
+			0,
+			true,
+			ClientUi::default(),
+		)
+		.unwrap();
+
+		let url = client.build_url_for_base(0, "api/trpc/foo?batch=1").unwrap();
+		assert_eq!(url.as_str(), "https://example.com/api/api/trpc/foo?batch=1");
 	}
 }
 

@@ -38,8 +38,8 @@ cargo build --release
 ### Authenticate
 
 ```bash
-# Point to your ZTNet instance (required before storing creds)
-ztnet config set profiles.default.host https://ztnet.example.com
+# Point to your ZTNet instance (validated automatically)
+ztnet config set host https://ztnet.example.com
 
 # Save your API token (grab it from ZTNet web UI -> Account -> API tokens)
 ztnet auth set-token YOUR_API_TOKEN
@@ -167,10 +167,10 @@ ztnet completion powershell >> $PROFILE
 
 ```bash
 # Set up profiles for different environments
-ztnet config set profiles.prod.host https://ztnet.prod.example.com
+ztnet --profile prod config set host https://ztnet.prod.example.com
 ztnet --profile prod auth set-token PROD_TOKEN
 
-ztnet config set profiles.staging.host https://ztnet.staging.example.com
+ztnet --profile staging config set host https://ztnet.staging.example.com
 ztnet --profile staging auth set-token STAGING_TOKEN
 
 # Optionally set defaults per host (used when you pass --host without --profile)

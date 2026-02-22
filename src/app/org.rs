@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::cli::{GlobalOpts, OrgCommand, OrgRole, OutputFormat};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine};
@@ -22,6 +22,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::from_context(global, &effective),
 	)?;
 
 	match command {
@@ -414,6 +415,7 @@ fn trpc_authed(global: &GlobalOpts, effective: &crate::context::EffectiveConfig)
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::from_context(global, effective),
 	)?
 	.with_cookie(Some(cookie)))
 }

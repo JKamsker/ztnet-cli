@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use crate::cli::{GlobalOpts, NetworkCommand, OutputFormat};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine};
@@ -22,6 +22,7 @@ pub(super) async fn run(global: &GlobalOpts, command: NetworkCommand) -> Result<
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::from_context(global, &effective),
 	)?;
 
 	match command {

@@ -26,6 +26,9 @@ pub struct ConfigSetArgs {
 
 	#[arg(value_name = "VALUE")]
 	pub value: String,
+
+	#[arg(long, help = "Skip host validation (format is still normalized)")]
+	pub no_validate: bool,
 }
 
 #[derive(Args, Debug)]
@@ -49,4 +52,3 @@ pub struct ConfigContextSetArgs {
 	#[arg(long, value_name = "NETWORK")]
 	pub network: Option<String>,
 }
-

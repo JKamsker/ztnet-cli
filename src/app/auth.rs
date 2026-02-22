@@ -10,7 +10,8 @@ use crate::config;
 use crate::context::{canonical_host_key, canonical_host_key_opt};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::host::normalize_host_input;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine, read_stdin_trimmed, redact_token};
@@ -45,11 +46,11 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 
 			let explicit_host = explicit_host
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 			let profile_host = non_empty(profile_host)
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 
 			if let (Some(explicit), Some(from_profile)) = (&explicit_host, &profile_host) {
@@ -66,6 +67,36 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 						.to_string(),
 				)
 			})?;
+
+			if !args.no_validate && !global.dry_run {
+				let client = HttpClient::new(
+					&host_value,
+					Some(token.clone()),
+					effective.timeout,
+					effective.retries,
+					global.dry_run,
+					ClientUi::new(global.quiet, global.no_color, Some(profile.clone())),
+				)?;
+
+				let result = client
+					.request_json(Method::GET, "/api/v1/network", None, Default::default(), true)
+					.await;
+
+				match result {
+					Ok(_) => {}
+					Err(CliError::HttpStatus { status, .. })
+						if matches!(
+							status,
+							reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+						) =>
+					{
+						return Err(CliError::InvalidArgument(format!(
+							"token rejected by server ({status})"
+						)));
+					}
+					Err(err) => return Err(err),
+				}
+			}
 
 			let host_key = canonical_host_key(&host_value)?;
 
@@ -103,11 +134,11 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 
 			let explicit_host = explicit_host
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 			let profile_host = non_empty(profile_host)
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 
 			if let (Some(explicit), Some(from_profile)) = (&explicit_host, &profile_host) {
@@ -280,6 +311,7 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				effective.timeout,
 				effective.retries,
 				global.dry_run,
+				ClientUi::from_context(global, &effective),
 			)?;
 
 			let response = client
@@ -536,7 +568,7 @@ fn auth_hosts_set_default(
 	effective: &crate::context::EffectiveConfig,
 	args: crate::cli::AuthHostsSetDefaultArgs,
 ) -> Result<(), CliError> {
-	let host_value = normalize_base_url(&args.host)?;
+	let host_value = normalize_host_input(&args.host)?;
 	let host_key = canonical_host_key(&host_value)?;
 
 	let mut matching_profiles = Vec::new();
@@ -599,7 +631,7 @@ fn auth_hosts_unset_default(
 	effective: &crate::context::EffectiveConfig,
 	args: crate::cli::AuthHostsUnsetDefaultArgs,
 ) -> Result<(), CliError> {
-	let host_value = normalize_base_url(&args.host)?;
+	let host_value = normalize_host_input(&args.host)?;
 	let host_key = canonical_host_key(&host_value)?;
 
 	let removed = cfg.host_defaults.remove(&host_key).is_some();
@@ -619,14 +651,6 @@ fn auth_hosts_unset_default(
 	});
 	output::print_value(&value, effective.output, global.no_color)?;
 	Ok(())
-}
-
-fn normalize_base_url(raw: &str) -> Result<String, CliError> {
-	let trimmed = raw.trim();
-	if trimmed.is_empty() {
-		return Err(CliError::InvalidArgument("host cannot be empty".to_string()));
-	}
-	Ok(trimmed.trim_end_matches('/').to_string())
 }
 
 fn infer_profile_name(host: &str, cfg: &crate::config::Config) -> Result<String, CliError> {
