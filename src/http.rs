@@ -1,13 +1,16 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use bytes::Bytes;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 use url::Url;
 
+use crate::cli::GlobalOpts;
+use crate::context::EffectiveConfig;
 use crate::error::CliError;
-use crate::host::{api_base_candidates, normalize_host_input};
+use crate::multi_base::{self, BaseCandidate};
 
 const AUTH_HEADER: &str = "x-ztnet-auth";
 
@@ -27,6 +30,14 @@ impl ClientUi {
 		}
 	}
 
+	pub fn from_context(global: &GlobalOpts, effective: &EffectiveConfig) -> Self {
+		Self::new(
+			global.quiet,
+			global.no_color,
+			Some(effective.profile.clone()),
+		)
+	}
+
 	fn fix_command(&self, host: &str) -> String {
 		match self.profile.as_deref() {
 			Some(profile) if profile != "default" => {
@@ -35,12 +46,6 @@ impl ClientUi {
 			_ => format!("ztnet config set host {host}"),
 		}
 	}
-}
-
-#[derive(Debug)]
-struct BaseCandidate {
-	display: String,
-	url: Url,
 }
 
 #[derive(Debug)]
@@ -64,21 +69,7 @@ impl HttpClient {
 		dry_run: bool,
 		ui: ClientUi,
 	) -> Result<Self, CliError> {
-		let base_url = normalize_host_input(base_url)?;
-		let candidates = api_base_candidates(&base_url);
-		let mut bases = Vec::with_capacity(candidates.len());
-		for candidate in candidates {
-			let mut url = Url::parse(&candidate)?;
-			normalize_base_url_for_join(&mut url);
-			bases.push(BaseCandidate {
-				display: candidate,
-				url,
-			});
-		}
-
-		if bases.is_empty() {
-			return Err(CliError::InvalidArgument("host cannot be empty".to_string()));
-		}
+		let bases = multi_base::build_base_candidates(base_url)?;
 
 		let client = reqwest::Client::builder().timeout(timeout).build()?;
 		Ok(Self {
@@ -99,37 +90,17 @@ impl HttpClient {
 	}
 
 	fn build_url_for_base(&self, base_idx: usize, path: &str) -> Result<Url, CliError> {
-		let path = path.trim();
-		if path.starts_with("http://") || path.starts_with("https://") {
-			return Ok(Url::parse(path)?);
-		}
-
-		let relative = path.strip_prefix('/').unwrap_or(path);
-		let base = self.bases.get(base_idx).ok_or_else(|| {
-			CliError::InvalidArgument("invalid internal host base index".to_string())
-		})?;
-		Ok(base.url.join(relative)?)
+		multi_base::build_url_for_base(&self.bases, base_idx, path, true)
 	}
 
 	fn maybe_warn_host_autofix(&self, active_idx: usize) {
-		if self.ui.quiet {
-			return;
-		}
-		if active_idx == 0 {
-			return;
-		}
-		if self.warned_autofix.swap(true, Ordering::Relaxed) {
-			return;
-		}
-
-		let Some(configured) = self.bases.first().map(|b| b.display.as_str()) else {
-			return;
-		};
-		let Some(using) = self.bases.get(active_idx).map(|b| b.display.as_str()) else {
-			return;
-		};
-
-		print_host_autofix_banner(&self.ui, configured, using);
+		multi_base::maybe_warn_host_autofix(
+			self.ui.quiet,
+			&self.warned_autofix,
+			&self.bases,
+			active_idx,
+			|configured, using| print_host_autofix_banner(&self.ui, configured, using),
+		);
 	}
 
 	pub async fn request_json(
@@ -144,7 +115,7 @@ impl HttpClient {
 		let is_absolute = path.starts_with("http://") || path.starts_with("https://");
 
 		let body_bytes = match body {
-			Some(v) => Some(serde_json::to_vec(&v)?),
+			Some(v) => Some(Bytes::from(serde_json::to_vec(&v)?)),
 			None => None,
 		};
 
@@ -213,6 +184,8 @@ impl HttpClient {
 		let path = path.trim();
 		let is_absolute = path.starts_with("http://") || path.starts_with("https://");
 
+		let body_bytes = body.map(Bytes::from);
+
 		let base_idx = self.active_base.load(Ordering::Relaxed);
 		let url = self.build_url_for_base(base_idx, path)?;
 
@@ -222,7 +195,7 @@ impl HttpClient {
 				&url,
 				include_auth.then(|| self.token.as_deref()).flatten(),
 				&headers,
-				body.as_deref(),
+				body_bytes.as_deref(),
 			);
 			return Err(CliError::DryRunPrinted);
 		}
@@ -231,7 +204,7 @@ impl HttpClient {
 			.request_bytes_with_url(
 				method.clone(),
 				url,
-				body.clone(),
+				body_bytes.clone(),
 				&headers,
 				include_auth,
 				content_type,
@@ -255,7 +228,7 @@ impl HttpClient {
 						.request_bytes_with_url(
 							method.clone(),
 							url,
-							body.clone(),
+							body_bytes.clone(),
 							&headers,
 							include_auth,
 							content_type,
@@ -278,7 +251,7 @@ impl HttpClient {
 		&self,
 		method: Method,
 		url: Url,
-		body_bytes: Option<Vec<u8>>,
+		body_bytes: Option<Bytes>,
 		headers: &HeaderMap,
 		include_auth: bool,
 	) -> Result<Value, CliError> {
@@ -301,10 +274,10 @@ impl HttpClient {
 				.client
 				.request(method.clone(), url.clone())
 				.headers(request_headers);
-			if let Some(bytes) = body_bytes.clone() {
+			if let Some(ref bytes) = body_bytes {
 				request = request
 					.header("content-type", "application/json")
-					.body(bytes);
+					.body(bytes.clone());
 			}
 
 			match request.send().await {
@@ -354,7 +327,7 @@ impl HttpClient {
 		&self,
 		method: Method,
 		url: Url,
-		body: Option<Vec<u8>>,
+		body: Option<Bytes>,
 		headers: &HeaderMap,
 		include_auth: bool,
 		content_type: Option<&str>,
@@ -378,11 +351,11 @@ impl HttpClient {
 				.client
 				.request(method.clone(), url.clone())
 				.headers(request_headers);
-			if let Some(bytes) = body.clone() {
+			if let Some(ref bytes) = body {
 				if let Some(content_type) = content_type {
 					request = request.header("content-type", content_type);
 				}
-				request = request.body(bytes);
+				request = request.body(bytes.clone());
 			}
 
 			match request.send().await {
@@ -429,26 +402,11 @@ impl HttpClient {
 	}
 }
 
-fn normalize_base_url_for_join(url: &mut Url) {
-	url.set_query(None);
-	url.set_fragment(None);
-
-	let path = url.path();
-	if !path.ends_with('/') {
-		let mut new_path = path.to_string();
-		new_path.push('/');
-		url.set_path(&new_path);
-	}
-}
-
+// NOTE: This HTTP predicate intentionally only checks for 404/405 and decode errors.
+// The tRPC client additionally treats `message == "invalid json response"` as a signal to
+// try alternate bases because it wraps non-JSON bodies into a CliError::HttpStatus.
 fn should_try_host_autofix(err: &CliError) -> bool {
-	match err {
-		CliError::HttpStatus { status, .. } => {
-			matches!(*status, StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED)
-		}
-		CliError::Request(err) => err.is_decode(),
-		_ => false,
-	}
+	multi_base::should_try_host_autofix_basic(err)
 }
 
 pub(crate) fn print_host_autofix_banner(ui: &ClientUi, configured: &str, using: &str) {

@@ -121,6 +121,17 @@ mod tests {
 	}
 
 	#[test]
+	fn api_base_candidates_handles_trailing_slash() {
+		assert_eq!(
+			api_base_candidates("https://example.com/api/"),
+			vec![
+				"https://example.com/api".to_string(),
+				"https://example.com".to_string()
+			]
+		);
+	}
+
+	#[test]
 	fn normalize_host_input_adds_default_scheme() {
 		assert_eq!(
 			normalize_host_input("ztnet.example.com/api").unwrap(),

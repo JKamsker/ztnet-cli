@@ -311,7 +311,7 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				effective.timeout,
 				effective.retries,
 				global.dry_run,
-				ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+				ClientUi::from_context(global, &effective),
 			)?;
 
 			let response = client

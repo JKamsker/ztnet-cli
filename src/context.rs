@@ -53,11 +53,18 @@ pub fn resolve_effective_config(
 
 	let profile_cfg = config.profile(&profile);
 
+	let profile_host_normalized = profile_cfg
+		.host
+		.as_deref()
+		.map(str::trim)
+		.filter(|v| !v.is_empty())
+		.map(normalize_host_input)
+		.transpose()?;
+
 	let host = if let Some(host) = explicit_host {
 		if explicit_profile.is_some() {
-			if let Some(profile_host) = empty_to_none(profile_cfg.host.clone()) {
-				let profile_host = normalize_host_input(&profile_host)?;
-				let profile_key = canonical_host_key(&profile_host)?;
+			if let Some(ref profile_host) = profile_host_normalized {
+				let profile_key = canonical_host_key(profile_host)?;
 				let target_key = canonical_host_key(&host)?;
 				if profile_key != target_key {
 					return Err(CliError::InvalidArgument(format!(
@@ -68,20 +75,12 @@ pub fn resolve_effective_config(
 		}
 		host
 	} else {
-		match empty_to_none(profile_cfg.host.clone()) {
-			Some(profile_host) => normalize_host_input(&profile_host)?,
-			None => "http://localhost:3000".to_string(),
-		}
+		profile_host_normalized
+			.clone()
+			.unwrap_or_else(|| "http://localhost:3000".to_string())
 	};
 
 	let target_host_key = canonical_host_key(&host)?;
-	let profile_host_normalized = profile_cfg
-		.host
-		.as_deref()
-		.map(str::trim)
-		.filter(|v| !v.is_empty())
-		.map(normalize_host_input)
-		.transpose()?;
 	let profile_host_key = canonical_host_key_opt(profile_host_normalized.as_deref());
 	let profile_host_matches = profile_host_key.as_deref() == Some(&target_host_key);
 

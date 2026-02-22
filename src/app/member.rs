@@ -22,7 +22,7 @@ pub(super) async fn run_alias(global: &GlobalOpts, command: MemberCommand) -> Re
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
-		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+		ClientUi::from_context(global, &effective),
 	)?;
 
 	match command {
@@ -195,7 +195,7 @@ fn trpc_authed(
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
-		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+		ClientUi::from_context(global, effective),
 	)?
 	.with_cookie(Some(cookie)))
 }

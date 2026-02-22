@@ -35,7 +35,7 @@ pub(super) async fn run(global: &GlobalOpts, command: UserCommand) -> Result<(),
 				effective.timeout,
 				effective.retries,
 				global.dry_run,
-				ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+				ClientUi::from_context(global, &effective),
 			)?;
 
 			let include_auth = !args.no_auth && effective.token.is_some();

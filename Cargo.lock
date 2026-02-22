@@ -1772,6 +1772,7 @@ name = "ztnet"
 version = "0.1.9"
 dependencies = [
  "base64",
+ "bytes",
  "clap",
  "clap_complete",
  "comfy-table",

@@ -8,14 +8,8 @@ use url::Url;
 
 use crate::context::EffectiveConfig;
 use crate::error::CliError;
-use crate::host::{api_base_candidates, normalize_host_input};
 use crate::http::{print_host_autofix_banner, ClientUi};
-
-#[derive(Debug)]
-struct BaseCandidate {
-	display: String,
-	url: Url,
-}
+use crate::multi_base::{self, BaseCandidate};
 
 #[derive(Debug)]
 pub(super) struct TrpcClient {
@@ -37,21 +31,7 @@ impl TrpcClient {
 		dry_run: bool,
 		ui: ClientUi,
 	) -> Result<Self, CliError> {
-		let base_url = normalize_host_input(base_url)?;
-		let candidates = api_base_candidates(&base_url);
-		let mut bases = Vec::with_capacity(candidates.len());
-		for candidate in candidates {
-			let mut url = Url::parse(&candidate)?;
-			normalize_base_url_for_join(&mut url);
-			bases.push(BaseCandidate {
-				display: candidate,
-				url,
-			});
-		}
-
-		if bases.is_empty() {
-			return Err(CliError::InvalidArgument("host cannot be empty".to_string()));
-		}
+		let bases = multi_base::build_base_candidates(base_url)?;
 
 		let client = reqwest::Client::builder().timeout(timeout).build()?;
 		Ok(Self {
@@ -130,32 +110,17 @@ impl TrpcClient {
 	}
 
 	fn build_url_for_base(&self, base_idx: usize, path: &str) -> Result<Url, CliError> {
-		let base = self.bases.get(base_idx).ok_or_else(|| {
-			CliError::InvalidArgument("invalid internal host base index".to_string())
-		})?;
-		let relative = path.trim().trim_start_matches('/');
-		Ok(base.url.join(relative)?)
+		multi_base::build_url_for_base(&self.bases, base_idx, path, false)
 	}
 
 	fn maybe_warn_host_autofix(&self, active_idx: usize) {
-		if self.ui.quiet {
-			return;
-		}
-		if active_idx == 0 {
-			return;
-		}
-		if self.warned_autofix.swap(true, Ordering::Relaxed) {
-			return;
-		}
-
-		let Some(configured) = self.bases.first().map(|b| b.display.as_str()) else {
-			return;
-		};
-		let Some(using) = self.bases.get(active_idx).map(|b| b.display.as_str()) else {
-			return;
-		};
-
-		print_host_autofix_banner(&self.ui, configured, using);
+		multi_base::maybe_warn_host_autofix(
+			self.ui.quiet,
+			&self.warned_autofix,
+			&self.bases,
+			active_idx,
+			|configured, using| print_host_autofix_banner(&self.ui, configured, using),
+		);
 	}
 
 	async fn call_with_url(
@@ -210,27 +175,12 @@ impl TrpcClient {
 	}
 }
 
-fn normalize_base_url_for_join(url: &mut Url) {
-	url.set_query(None);
-	url.set_fragment(None);
-
-	let path = url.path();
-	if !path.ends_with('/') {
-		let mut new_path = path.to_string();
-		new_path.push('/');
-		url.set_path(&new_path);
-	}
-}
-
 fn should_try_host_autofix(err: &CliError) -> bool {
-	match err {
-		CliError::HttpStatus { status, message, .. } => {
-			matches!(*status, StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED)
-				|| message == "invalid json response"
-		}
-		CliError::Request(err) => err.is_decode(),
-		_ => false,
+	if multi_base::should_try_host_autofix_basic(err) {
+		return true;
 	}
+
+	matches!(err, CliError::HttpStatus { message, .. } if message == "invalid json response")
 }
 
 #[cfg(test)]

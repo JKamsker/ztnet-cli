@@ -5,6 +5,7 @@ mod context;
 mod error;
 mod host;
 mod http;
+mod multi_base;
 mod output;
 
 use clap::Parser;

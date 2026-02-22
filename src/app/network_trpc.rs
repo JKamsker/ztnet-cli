@@ -326,7 +326,7 @@ fn trpc_authed(global: &GlobalOpts, effective: &EffectiveConfig) -> Result<TrpcC
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
-		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+		ClientUi::from_context(global, effective),
 	)?
 	.with_cookie(Some(cookie)))
 }

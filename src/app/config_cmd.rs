@@ -56,7 +56,7 @@ pub(super) async fn run(global: &GlobalOpts, command: ConfigCommand) -> Result<(
 				}
 			}
 
-			set_config_key(&mut cfg, &key, &value)?;
+			set_config_key(&mut cfg, &key, &value, is_profile_host_key(&key))?;
 			config::save_config(&config_path, &cfg)?;
 			if !global.quiet {
 				eprintln!("Set {}.", key);
@@ -168,7 +168,12 @@ fn get_config_key(cfg: &Config, key: &str) -> Result<Value, CliError> {
 	}
 }
 
-fn set_config_key(cfg: &mut Config, key: &str, value: &str) -> Result<(), CliError> {
+fn set_config_key(
+	cfg: &mut Config,
+	key: &str,
+	value: &str,
+	skip_host_normalize: bool,
+) -> Result<(), CliError> {
 	let parts: Vec<&str> = key.split('.').collect();
 	match parts.as_slice() {
 		["active_profile"] => {
@@ -178,7 +183,11 @@ fn set_config_key(cfg: &mut Config, key: &str, value: &str) -> Result<(), CliErr
 		["profiles", profile, field] => {
 			match *field {
 				"host" => {
-					let normalized = normalize_host_input(value)?;
+					let normalized = if skip_host_normalize {
+						value.to_string()
+					} else {
+						normalize_host_input(value)?
+					};
 					let host_key = canonical_host_key(&normalized)?;
 
 					{
@@ -324,7 +333,16 @@ async fn select_valid_ztnet_host(base: &str, timeout: Duration) -> Result<String
 }
 
 async fn probe_ztnet_instance(client: &reqwest::Client, base: &str) -> Result<(), String> {
-	let csrf_url = build_url_from_base(base, "/api/auth/csrf").map_err(|e| e.to_string())?;
+	// `api_base_candidates` may return either the bare host or the "/api" base; the probe paths are
+	// relative to the chosen base to avoid joining "api/..." onto an already "/api"-suffixed URL.
+	let base_has_api_suffix = base.trim_end_matches('/').ends_with("/api");
+
+	let csrf_path = if base_has_api_suffix {
+		"auth/csrf"
+	} else {
+		"api/auth/csrf"
+	};
+	let csrf_url = build_url_from_base(base, csrf_path).map_err(|e| e.to_string())?;
 	let resp = client
 		.get(csrf_url)
 		.header("accept", "application/json")
@@ -350,7 +368,12 @@ async fn probe_ztnet_instance(client: &reqwest::Client, base: &str) -> Result<()
 		return Err("GET /api/auth/csrf missing csrfToken".to_string());
 	}
 
-	let api_url = build_url_from_base(base, "/api/v1/network").map_err(|e| e.to_string())?;
+	let network_path = if base_has_api_suffix {
+		"v1/network"
+	} else {
+		"api/v1/network"
+	};
+	let api_url = build_url_from_base(base, network_path).map_err(|e| e.to_string())?;
 	let resp = client
 		.get(api_url)
 		// Some reverse proxies / deployments return 5xx when no token is provided at all.

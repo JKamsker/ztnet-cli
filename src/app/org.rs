@@ -22,7 +22,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
-		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+		ClientUi::from_context(global, &effective),
 	)?;
 
 	match command {
@@ -415,7 +415,7 @@ fn trpc_authed(global: &GlobalOpts, effective: &crate::context::EffectiveConfig)
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
-		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
+		ClientUi::from_context(global, effective),
 	)?
 	.with_cookie(Some(cookie)))
 }
