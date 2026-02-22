@@ -17,7 +17,7 @@ Automate a full release on every push to `master`:
   - It skips runs authored by `github-actions[bot]` (avoids infinite loops).
   - It bumps **patch** on every non-bot push.
   - It commits `Cargo.toml` + `Cargo.lock` changes and tags the bump commit as `v<new_version>`.
-- **Release** happens on tag pushes (`v*`) and:
+- **Release** happens via `workflow_dispatch` triggered by the version bump workflow (and also supports manual tag pushes `v*`) and:
   - Runs `cargo test --locked`
   - Builds and packages release binaries for Windows/Linux/macOS
   - Creates a GitHub Release for the tag (or no-ops if it already exists)
@@ -30,4 +30,3 @@ Automate a full release on every push to `master`:
 ## Required secrets
 - `CARGO_REGISTRY_TOKEN` (crates.io API token)
 - `WINGET_TOKEN` (classic PAT with `public_repo` scope) — optional, for WinGet PR automation
-

@@ -186,7 +186,7 @@ src/
 Releases are automated on GitHub:
 
 - Every push to `master` bumps the patch version in `Cargo.toml` (and the root package version in `Cargo.lock`) and creates a `v<version>` tag via `.github/workflows/version-bump.yml`.
-- Every tag push (`v*`) runs the release pipeline via `.github/workflows/release.yml`:
+- The version bump workflow triggers the release pipeline via `workflow_dispatch` on the new `v<version>` tag (and `.github/workflows/release.yml` also supports manual tag pushes `v*`):
   - runs `cargo test --locked`
   - builds release binaries and publishes a GitHub Release
   - publishes to crates.io when `CARGO_REGISTRY_TOKEN` is set
