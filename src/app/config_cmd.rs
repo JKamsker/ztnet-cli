@@ -353,6 +353,9 @@ async fn probe_ztnet_instance(client: &reqwest::Client, base: &str) -> Result<()
 	let api_url = build_url_from_base(base, "/api/v1/network").map_err(|e| e.to_string())?;
 	let resp = client
 		.get(api_url)
+		// Some reverse proxies / deployments return 5xx when no token is provided at all.
+		// Sending an intentionally invalid token should still yield 401/403 if the endpoint exists.
+		.header("x-ztnet-auth", "invalid")
 		.header("accept", "application/json")
 		.send()
 		.await
