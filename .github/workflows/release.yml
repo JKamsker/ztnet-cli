@@ -298,3 +298,75 @@ jobs:
           identifier: JKamsker.ZTNetCLI
           installers-regex: 'x86_64-pc-windows-msvc\\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
+
+  chocolatey:
+    name: Publish to Chocolatey
+    runs-on: windows-latest
+    needs: release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check token
+        id: token
+        shell: bash
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${CHOCO_API_KEY:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "CHOCO_API_KEY not set; skipping"
+          fi
+
+      - name: Pack + push
+        if: ${{ steps.token.outputs.present == 'true' }}
+        shell: pwsh
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $version = @'
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("Cargo.toml").read_text("utf-8"))
+          print(data["package"]["version"])
+          '@ | python -
+          $version = $version.Trim()
+          $tag = "v$version"
+
+          $shaUrl = "https://github.com/JKamsker/ztnet-cli/releases/download/$tag/ztnet-$version-x86_64-pc-windows-msvc.zip.sha256"
+          $shaLine = (Invoke-RestMethod $shaUrl).Trim()
+          $hash = $shaLine.Split(' ')[0]
+          if ([string]::IsNullOrWhiteSpace($hash)) {
+            throw "Failed to determine SHA256 for $shaUrl"
+          }
+
+          Remove-Item -Recurse -Force .tmp_choco -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force .tmp_choco/pkg | Out-Null
+
+          Copy-Item -Recurse -Force packaging/chocolatey/ztnet/* .tmp_choco/pkg
+
+          foreach ($path in @(
+            ".tmp_choco/pkg/tools/chocolateyinstall.ps1",
+            ".tmp_choco/pkg/tools/VERIFICATION.txt"
+          )) {
+            $content = Get-Content -Raw $path
+            $content = $content -replace "__CHECKSUM__", $hash
+            Set-Content -Path $path -Value $content -NoNewline
+          }
+
+          New-Item -ItemType Directory -Force .tmp_choco/out | Out-Null
+          choco pack .tmp_choco/pkg/ztnet.nuspec --version $version --outputdirectory .tmp_choco/out --no-progress
+
+          $nupkg = Get-ChildItem .tmp_choco/out -Filter "ztnet.$version.nupkg" | Select-Object -First 1
+          if (-not $nupkg) {
+            throw "Expected nupkg not found in .tmp_choco/out"
+          }
+
+          choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress
