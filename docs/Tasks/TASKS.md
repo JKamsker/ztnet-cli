@@ -17,3 +17,16 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Refactor: split `src/app.rs` into modules (<500 lines/file)
 - [x] Refactor: split `src/cli.rs` into modules (<500 lines/file)
 - [x] Add Docker-based local ZTNet test harness + run CLI smoke test
+
+## Robust host config + validation
+
+- [x] Create task checklist
+- [ ] Support base URLs with path prefixes (`https://host/prefix`)
+- [ ] Add host normalization helpers (smart scheme, trim, trailing slash)
+- [ ] Add `ztnet config set host <URL>` alias + `config set --no-validate`
+- [ ] Validate host as ZTNet instance on set (try `/api` variants)
+- [ ] Validate token by default in `auth set-token` (`--no-validate` bypass)
+- [ ] Runtime host auto-fix (toggle `/api`) + big warning banner
+- [ ] Keep `host_defaults` consistent when host set/unset
+- [ ] Add unit tests for host normalization/candidates
+- [ ] Update docs (README + `docs/commands.md` + `docs/configuration.md`)
