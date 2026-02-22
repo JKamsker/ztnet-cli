@@ -276,8 +276,23 @@ jobs:
             echo "WINGET_TOKEN not set; skipping"
           fi
 
-      - name: Publish to WinGet
+      - name: Check winget-pkgs has package
+        id: pkg
         if: ${{ steps.token.outputs.present == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/j/JKamsker/ZTNetCLI?ref=master"
+          code="$(curl -s -o /dev/null -w "%{http_code}" -H "Accept: application/vnd.github+json" "$url")"
+          if [[ "$code" == "200" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Package not in winget-pkgs yet (HTTP $code); skipping"
+          fi
+
+      - name: Publish to WinGet
+        if: ${{ steps.token.outputs.present == 'true' && steps.pkg.outputs.exists == 'true' }}
         uses: vedantmgoyal9/winget-releaser@main
         with:
           identifier: JKamsker.ZTNetCLI
