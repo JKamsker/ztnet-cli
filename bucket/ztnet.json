@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "description": "ZTNet CLI — manage ZeroTier networks via ZTNet",
+  "homepage": "https://github.com/JKamsker/ztnet-cli",
+  "license": "AGPL-3.0-only",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/JKamsker/ztnet-cli/releases/download/v0.1.0/ztnet-0.1.0-x86_64-pc-windows-msvc.zip",
+      "hash": "86c0b065b1265bb13977c23b2da482e9e58d0dc85f6f5fdabe9a5e6eadb37174"
+    }
+  },
+  "bin": "ztnet.exe"
+}
