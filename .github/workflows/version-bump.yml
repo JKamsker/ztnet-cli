@@ -38,74 +38,74 @@ jobs:
         run: |
           set -euo pipefail
           NEW_VERSION="$(
-            python - <<'PY'
-            import re
-            import subprocess
-            import tomllib
-            from pathlib import Path
+          python - <<'PY'
+          import re
+          import subprocess
+          import tomllib
+          from pathlib import Path
 
-            crate_name = "ztnet"
-            cargo_toml = Path("Cargo.toml")
-            cargo_lock = Path("Cargo.lock")
+          crate_name = "ztnet"
+          cargo_toml = Path("Cargo.toml")
+          cargo_lock = Path("Cargo.lock")
 
-            data = tomllib.loads(cargo_toml.read_text("utf-8"))
-            current = data["package"]["version"]
+          data = tomllib.loads(cargo_toml.read_text("utf-8"))
+          current = data["package"]["version"]
 
-            m = re.fullmatch(r"(\\d+)\\.(\\d+)\\.(\\d+)", current)
-            if not m:
-              raise SystemExit(f"Unsupported version format: {current!r}")
+          m = re.fullmatch(r"(\\d+)\\.(\\d+)\\.(\\d+)", current)
+          if not m:
+            raise SystemExit(f"Unsupported version format: {current!r}")
 
-            major, minor, patch = map(int, m.groups())
+          major, minor, patch = map(int, m.groups())
 
-            while True:
-              patch += 1
-              candidate = f"{major}.{minor}.{patch}"
-              tag = f"v{candidate}"
-              result = subprocess.run(
-                ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-              )
-              if result.returncode != 0:
-                new_version = candidate
+          while True:
+            patch += 1
+            candidate = f"{major}.{minor}.{patch}"
+            tag = f"v{candidate}"
+            result = subprocess.run(
+              ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
+              stdout=subprocess.DEVNULL,
+              stderr=subprocess.DEVNULL,
+            )
+            if result.returncode != 0:
+              new_version = candidate
+              break
+
+          # Update Cargo.toml: [package].version
+          lines = cargo_toml.read_text("utf-8").splitlines()
+          in_package = False
+          updated = False
+          for i, line in enumerate(lines):
+            if line.strip() == "[package]":
+              in_package = True
+              continue
+            if in_package and line.startswith("[") and line.strip() != "[package]":
+              in_package = False
+            if in_package and line.strip().startswith("version"):
+              lines[i] = f'version = "{new_version}"'
+              updated = True
+              break
+
+          if not updated:
+            raise SystemExit("Could not update [package].version in Cargo.toml")
+
+          cargo_toml.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+
+          # Update Cargo.lock: root package version (minimal edit)
+          if cargo_lock.is_file():
+            lock_lines = cargo_lock.read_text("utf-8").splitlines()
+            for i, line in enumerate(lock_lines):
+              if line.strip() == f'name = "{crate_name}"':
+                for j in range(i + 1, min(i + 20, len(lock_lines))):
+                  if lock_lines[j].strip().startswith("version ="):
+                    lock_lines[j] = f'version = "{new_version}"'
+                    cargo_lock.write_text("\\n".join(lock_lines) + "\\n", encoding="utf-8")
+                    break
+                else:
+                  raise SystemExit(f"Could not find version for {crate_name} in Cargo.lock")
                 break
 
-            # Update Cargo.toml: [package].version
-            lines = cargo_toml.read_text("utf-8").splitlines()
-            in_package = False
-            updated = False
-            for i, line in enumerate(lines):
-              if line.strip() == "[package]":
-                in_package = True
-                continue
-              if in_package and line.startswith("[") and line.strip() != "[package]":
-                in_package = False
-              if in_package and line.strip().startswith("version"):
-                lines[i] = f'version = "{new_version}"'
-                updated = True
-                break
-
-            if not updated:
-              raise SystemExit("Could not update [package].version in Cargo.toml")
-
-            cargo_toml.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-
-            # Update Cargo.lock: root package version (minimal edit)
-            if cargo_lock.is_file():
-              lock_lines = cargo_lock.read_text("utf-8").splitlines()
-              for i, line in enumerate(lock_lines):
-                if line.strip() == f'name = "{crate_name}"':
-                  for j in range(i + 1, min(i + 20, len(lock_lines))):
-                    if lock_lines[j].strip().startswith("version ="):
-                      lock_lines[j] = f'version = "{new_version}"'
-                      cargo_lock.write_text("\\n".join(lock_lines) + "\\n", encoding="utf-8")
-                      break
-                  else:
-                    raise SystemExit(f"Could not find version for {crate_name} in Cargo.lock")
-                  break
-
-            print(new_version)
-            PY
+          print(new_version)
+          PY
           )"
           echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -136,4 +136,3 @@ jobs:
           set -euo pipefail
           git push origin master
           git push origin --tags
-
