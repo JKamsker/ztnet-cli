@@ -26,6 +26,9 @@ pub struct AuthSetTokenArgs {
 	#[arg(long, help = "Read token from STDIN (avoids shell history)")]
 	pub stdin: bool,
 
+	#[arg(long, help = "Skip token validation against the server")]
+	pub no_validate: bool,
+
 	#[arg(value_name = "TOKEN")]
 	pub token: Option<String>,
 }

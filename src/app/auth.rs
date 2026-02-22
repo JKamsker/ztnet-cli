@@ -68,6 +68,35 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				)
 			})?;
 
+			if !args.no_validate && !global.dry_run {
+				let client = HttpClient::new(
+					&host_value,
+					Some(token.clone()),
+					effective.timeout,
+					effective.retries,
+					global.dry_run,
+				)?;
+
+				let result = client
+					.request_json(Method::GET, "/api/v1/network", None, Default::default(), true)
+					.await;
+
+				match result {
+					Ok(_) => {}
+					Err(CliError::HttpStatus { status, .. })
+						if matches!(
+							status,
+							reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+						) =>
+					{
+						return Err(CliError::InvalidArgument(format!(
+							"token rejected by server ({status})"
+						)));
+					}
+					Err(err) => return Err(err),
+				}
+			}
+
 			let host_key = canonical_host_key(&host_value)?;
 
 			let profile_cfg = cfg.profile_mut(&profile);
