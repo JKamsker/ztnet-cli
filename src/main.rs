@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod context;
 mod error;
+mod host;
 mod http;
 mod output;
 

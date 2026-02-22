@@ -10,6 +10,7 @@ use crate::config;
 use crate::context::{canonical_host_key, canonical_host_key_opt};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
+use crate::host::normalize_host_input;
 use crate::http::HttpClient;
 use crate::output;
 
@@ -45,11 +46,11 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 
 			let explicit_host = explicit_host
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 			let profile_host = non_empty(profile_host)
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 
 			if let (Some(explicit), Some(from_profile)) = (&explicit_host, &profile_host) {
@@ -103,11 +104,11 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 
 			let explicit_host = explicit_host
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 			let profile_host = non_empty(profile_host)
 				.as_deref()
-				.map(normalize_base_url)
+				.map(normalize_host_input)
 				.transpose()?;
 
 			if let (Some(explicit), Some(from_profile)) = (&explicit_host, &profile_host) {
@@ -536,7 +537,7 @@ fn auth_hosts_set_default(
 	effective: &crate::context::EffectiveConfig,
 	args: crate::cli::AuthHostsSetDefaultArgs,
 ) -> Result<(), CliError> {
-	let host_value = normalize_base_url(&args.host)?;
+	let host_value = normalize_host_input(&args.host)?;
 	let host_key = canonical_host_key(&host_value)?;
 
 	let mut matching_profiles = Vec::new();
@@ -599,7 +600,7 @@ fn auth_hosts_unset_default(
 	effective: &crate::context::EffectiveConfig,
 	args: crate::cli::AuthHostsUnsetDefaultArgs,
 ) -> Result<(), CliError> {
-	let host_value = normalize_base_url(&args.host)?;
+	let host_value = normalize_host_input(&args.host)?;
 	let host_key = canonical_host_key(&host_value)?;
 
 	let removed = cfg.host_defaults.remove(&host_key).is_some();
@@ -619,14 +620,6 @@ fn auth_hosts_unset_default(
 	});
 	output::print_value(&value, effective.output, global.no_color)?;
 	Ok(())
-}
-
-fn normalize_base_url(raw: &str) -> Result<String, CliError> {
-	let trimmed = raw.trim();
-	if trimmed.is_empty() {
-		return Err(CliError::InvalidArgument("host cannot be empty".to_string()));
-	}
-	Ok(trimmed.trim_end_matches('/').to_string())
 }
 
 fn infer_profile_name(host: &str, cfg: &crate::config::Config) -> Result<String, CliError> {
