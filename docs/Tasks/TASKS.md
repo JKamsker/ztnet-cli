@@ -24,7 +24,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Support base URLs with path prefixes (`https://host/prefix`)
 - [x] Add host normalization helpers (smart scheme, trim, trailing slash)
 - [x] Add `ztnet config set host <URL>` alias + `config set --no-validate`
-- [ ] Validate host as ZTNet instance on set (try `/api` variants)
+- [x] Validate host as ZTNet instance on set (try `/api` variants)
 - [ ] Validate token by default in `auth set-token` (`--no-validate` bypass)
 - [ ] Runtime host auto-fix (toggle `/api`) + big warning banner
 - [ ] Keep `host_defaults` consistent when host set/unset

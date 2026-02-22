@@ -1,11 +1,15 @@
+use std::time::Duration;
+
 use serde_json::{json, Value};
 
 use crate::cli::{ConfigCommand, GlobalOpts, OutputFormat};
 use crate::config::{self, Config};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::host::normalize_host_input;
+use crate::host::{api_base_candidates, normalize_host_input};
 use crate::output;
+use reqwest::StatusCode;
+use url::Url;
 
 use super::common::{
 	load_config_store, opt_string, print_human_or_machine, redact_token, render_scalar,
@@ -36,7 +40,22 @@ pub(super) async fn run(global: &GlobalOpts, command: ConfigCommand) -> Result<(
 				args.key.clone()
 			};
 
-			set_config_key(&mut cfg, &key, &args.value)?;
+			let mut value = args.value.clone();
+			if is_profile_host_key(&key) {
+				let normalized = normalize_host_input(&value)?;
+				if !args.no_validate && !global.dry_run {
+					let timeout = effective.timeout.min(Duration::from_secs(5));
+					let selected = select_valid_ztnet_host(&normalized, timeout).await?;
+					if selected != normalized && !global.quiet {
+						eprintln!("Host validated as '{selected}' (corrected from '{normalized}').");
+					}
+					value = selected;
+				} else {
+					value = normalized;
+				}
+			}
+
+			set_config_key(&mut cfg, &key, &value)?;
 			config::save_config(&config_path, &cfg)?;
 			if !global.quiet {
 				eprintln!("Set {}.", key);
@@ -229,4 +248,91 @@ fn parse_output_format(value: &str) -> Result<crate::cli::OutputFormat, CliError
 			"invalid output format: {value}"
 		))),
 	}
+}
+
+fn is_profile_host_key(key: &str) -> bool {
+	matches!(
+		key.split('.').collect::<Vec<_>>().as_slice(),
+		["profiles", _, "host"]
+	)
+}
+
+async fn select_valid_ztnet_host(base: &str, timeout: Duration) -> Result<String, CliError> {
+	let candidates = api_base_candidates(base);
+
+	let client = reqwest::Client::builder().timeout(timeout).build()?;
+
+	let mut last_error = None;
+	for candidate in &candidates {
+		match probe_ztnet_instance(&client, candidate).await {
+			Ok(()) => return Ok(candidate.clone()),
+			Err(err) => last_error = Some(err),
+		}
+	}
+
+	let detail = last_error.unwrap_or_else(|| "unknown error".to_string());
+	Err(CliError::InvalidArgument(format!(
+		"host did not look like a ZTNet instance (tried: {}): {detail} (pass --no-validate to save anyway)",
+		candidates.join(", ")
+	)))
+}
+
+async fn probe_ztnet_instance(client: &reqwest::Client, base: &str) -> Result<(), String> {
+	let csrf_url = build_url_from_base(base, "/api/auth/csrf").map_err(|e| e.to_string())?;
+	let resp = client
+		.get(csrf_url)
+		.header("accept", "application/json")
+		.send()
+		.await
+		.map_err(|err| format!("GET /api/auth/csrf request failed: {err}"))?;
+
+	let status = resp.status();
+	if !status.is_success() {
+		return Err(format!("GET /api/auth/csrf returned {status}"));
+	}
+
+	let value = resp
+		.json::<serde_json::Value>()
+		.await
+		.map_err(|err| format!("GET /api/auth/csrf did not return JSON: {err}"))?;
+	let csrf = value
+		.get("csrfToken")
+		.and_then(|v| v.as_str())
+		.unwrap_or("")
+		.trim();
+	if csrf.is_empty() {
+		return Err("GET /api/auth/csrf missing csrfToken".to_string());
+	}
+
+	let api_url = build_url_from_base(base, "/api/v1/network").map_err(|e| e.to_string())?;
+	let resp = client
+		.get(api_url)
+		.header("accept", "application/json")
+		.send()
+		.await
+		.map_err(|err| format!("GET /api/v1/network request failed: {err}"))?;
+
+	match resp.status() {
+		StatusCode::OK | StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Ok(()),
+		status => Err(format!("GET /api/v1/network returned {status}")),
+	}
+}
+
+fn build_url_from_base(base: &str, path: &str) -> Result<Url, CliError> {
+	let mut base_url = Url::parse(base).map_err(|err| {
+		CliError::InvalidArgument(format!("invalid host url: {err}"))
+	})?;
+
+	base_url.set_query(None);
+	base_url.set_fragment(None);
+
+	let base_path = base_url.path();
+	if !base_path.ends_with('/') {
+		let mut new_path = base_path.to_string();
+		new_path.push('/');
+		base_url.set_path(&new_path);
+	}
+
+	let relative = path.trim().trim_start_matches('/');
+	Ok(base_url.join(relative)?)
 }

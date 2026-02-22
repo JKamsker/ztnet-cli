@@ -47,6 +47,28 @@ pub(crate) fn normalize_host_input(raw: &str) -> Result<String, CliError> {
 	Ok(out)
 }
 
+pub(crate) fn api_base_candidates(base: &str) -> Vec<String> {
+	let base = base.trim_end_matches('/');
+
+	let mut out = Vec::with_capacity(2);
+	if !base.is_empty() {
+		out.push(base.to_string());
+	}
+
+	if let Some(stripped) = base.strip_suffix("/api") {
+		if !stripped.is_empty() && !out.iter().any(|v| v == stripped) {
+			out.push(stripped.to_string());
+		}
+	} else {
+		let candidate = format!("{base}/api");
+		if !out.iter().any(|v| v == &candidate) {
+			out.push(candidate);
+		}
+	}
+
+	out
+}
+
 fn infer_default_scheme(raw: &str) -> &'static str {
 	let before_slash = raw.split('/').next().unwrap_or(raw);
 
@@ -117,4 +139,3 @@ mod tests {
 		}
 	}
 }
-
