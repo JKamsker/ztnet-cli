@@ -11,7 +11,7 @@ use crate::context::{canonical_host_key, canonical_host_key_opt};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
 use crate::host::normalize_host_input;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine, read_stdin_trimmed, redact_token};
@@ -75,6 +75,7 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 					effective.timeout,
 					effective.retries,
 					global.dry_run,
+					ClientUi::new(global.quiet, global.no_color, Some(profile.clone())),
 				)?;
 
 				let result = client
@@ -310,6 +311,7 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				effective.timeout,
 				effective.retries,
 				global.dry_run,
+				ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 			)?;
 
 			let response = client

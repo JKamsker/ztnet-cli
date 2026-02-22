@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -7,14 +8,25 @@ use url::Url;
 
 use crate::context::EffectiveConfig;
 use crate::error::CliError;
+use crate::host::{api_base_candidates, normalize_host_input};
+use crate::http::{print_host_autofix_banner, ClientUi};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+struct BaseCandidate {
+	display: String,
+	url: Url,
+}
+
+#[derive(Debug)]
 pub(super) struct TrpcClient {
-	base_url: Url,
+	bases: Vec<BaseCandidate>,
+	active_base: AtomicUsize,
+	warned_autofix: AtomicBool,
 	retries: u32,
 	dry_run: bool,
 	client: reqwest::Client,
 	cookie: Option<String>,
+	ui: ClientUi,
 }
 
 impl TrpcClient {
@@ -23,16 +35,34 @@ impl TrpcClient {
 		timeout: Duration,
 		retries: u32,
 		dry_run: bool,
+		ui: ClientUi,
 	) -> Result<Self, CliError> {
-		let mut base_url = Url::parse(base_url)?;
-		normalize_base_url_for_join(&mut base_url);
+		let base_url = normalize_host_input(base_url)?;
+		let candidates = api_base_candidates(&base_url);
+		let mut bases = Vec::with_capacity(candidates.len());
+		for candidate in candidates {
+			let mut url = Url::parse(&candidate)?;
+			normalize_base_url_for_join(&mut url);
+			bases.push(BaseCandidate {
+				display: candidate,
+				url,
+			});
+		}
+
+		if bases.is_empty() {
+			return Err(CliError::InvalidArgument("host cannot be empty".to_string()));
+		}
+
 		let client = reqwest::Client::builder().timeout(timeout).build()?;
 		Ok(Self {
-			base_url,
+			bases,
+			active_base: AtomicUsize::new(0),
+			warned_autofix: AtomicBool::new(false),
 			retries,
 			dry_run,
 			client,
 			cookie: None,
+			ui,
 		})
 	}
 
@@ -43,7 +73,6 @@ impl TrpcClient {
 
 	pub(super) async fn call(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
 		let path = format!("api/trpc/{}?batch=1", procedure.trim());
-		let url = self.base_url.join(&path)?;
 
 		let body = json!({ "0": { "json": input } });
 		let body_bytes = serde_json::to_vec(&body)?;
@@ -61,18 +90,87 @@ impl TrpcClient {
 			);
 		}
 
+		let base_idx = self.active_base.load(Ordering::Relaxed);
+		let url = self.build_url_for_base(base_idx, &path)?;
+
 		if self.dry_run {
 			print_dry_run(&Method::POST, &url, &headers, &body);
 			return Err(CliError::DryRunPrinted);
 		}
 
+		let result = self
+			.call_with_url(url, &headers, &body_bytes)
+			.await;
+
+		if self.bases.len() < 2 {
+			return result;
+		}
+
+		match result {
+			Ok(value) => Ok(value),
+			Err(err) if should_try_host_autofix(&err) => {
+				for idx in 0..self.bases.len() {
+					if idx == base_idx {
+						continue;
+					}
+
+					let url = self.build_url_for_base(idx, &path)?;
+					let attempt = self.call_with_url(url, &headers, &body_bytes).await;
+					if let Ok(value) = attempt {
+						self.active_base.store(idx, Ordering::Relaxed);
+						self.maybe_warn_host_autofix(idx);
+						return Ok(value);
+					}
+				}
+
+				Err(err)
+			}
+			Err(err) => Err(err),
+		}
+	}
+
+	fn build_url_for_base(&self, base_idx: usize, path: &str) -> Result<Url, CliError> {
+		let base = self.bases.get(base_idx).ok_or_else(|| {
+			CliError::InvalidArgument("invalid internal host base index".to_string())
+		})?;
+		let relative = path.trim().trim_start_matches('/');
+		Ok(base.url.join(relative)?)
+	}
+
+	fn maybe_warn_host_autofix(&self, active_idx: usize) {
+		if self.ui.quiet {
+			return;
+		}
+		if active_idx == 0 {
+			return;
+		}
+		if self.warned_autofix.swap(true, Ordering::Relaxed) {
+			return;
+		}
+
+		let Some(configured) = self.bases.first().map(|b| b.display.as_str()) else {
+			return;
+		};
+		let Some(using) = self.bases.get(active_idx).map(|b| b.display.as_str()) else {
+			return;
+		};
+
+		print_host_autofix_banner(&self.ui, configured, using);
+	}
+
+	async fn call_with_url(
+		&self,
+		url: Url,
+		headers: &HeaderMap,
+		body_bytes: &[u8],
+	) -> Result<Value, CliError> {
 		let mut backoff = Duration::from_millis(200);
 		for attempt in 0..=self.retries {
 			let request = self
 				.client
 				.request(Method::POST, url.clone())
 				.headers(headers.clone())
-				.body(body_bytes.clone());
+				.body(body_bytes.to_vec());
 
 			match request.send().await {
 				Ok(resp) => {
@@ -124,6 +222,17 @@ fn normalize_base_url_for_join(url: &mut Url) {
 	}
 }
 
+fn should_try_host_autofix(err: &CliError) -> bool {
+	match err {
+		CliError::HttpStatus { status, message, .. } => {
+			matches!(*status, StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED)
+				|| message == "invalid json response"
+		}
+		CliError::Request(err) => err.is_decode(),
+		_ => false,
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -135,10 +244,11 @@ mod tests {
 			Duration::from_secs(1),
 			0,
 			true,
+			ClientUi::default(),
 		)
 		.unwrap();
 
-		let url = client.base_url.join("api/trpc/foo?batch=1").unwrap();
+		let url = client.build_url_for_base(0, "api/trpc/foo?batch=1").unwrap();
 		assert_eq!(url.as_str(), "https://example.com/api/api/trpc/foo?batch=1");
 	}
 }

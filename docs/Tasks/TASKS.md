@@ -26,7 +26,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Add `ztnet config set host <URL>` alias + `config set --no-validate`
 - [x] Validate host as ZTNet instance on set (try `/api` variants)
 - [x] Validate token by default in `auth set-token` (`--no-validate` bypass)
-- [ ] Runtime host auto-fix (toggle `/api`) + big warning banner
+- [x] Runtime host auto-fix (toggle `/api`) + big warning banner
 - [ ] Keep `host_defaults` consistent when host set/unset
 - [ ] Add unit tests for host normalization/candidates
 - [ ] Update docs (README + `docs/commands.md` + `docs/configuration.md`)

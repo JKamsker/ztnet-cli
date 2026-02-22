@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use crate::cli::{GlobalOpts, TrpcCommand};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 use crate::output;
 
 use super::common::{load_config_store, print_human_or_machine};
@@ -20,6 +20,7 @@ pub(super) async fn run(global: &GlobalOpts, command: TrpcCommand) -> Result<(),
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 	)?;
 
 	match command {

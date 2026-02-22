@@ -10,6 +10,7 @@ use crate::cli::{
 };
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
+use crate::http::ClientUi;
 use crate::output;
 
 use super::common::{confirm, load_config_store, print_human_or_machine};
@@ -416,7 +417,7 @@ fn trpc_authed(
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 	)?
 	.with_cookie(Some(cookie)))
 }
-

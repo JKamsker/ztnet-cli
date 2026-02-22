@@ -3,7 +3,7 @@ use reqwest::Method;
 use crate::cli::{GlobalOpts, StatsCommand};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 
 use super::common::{load_config_store, print_human_or_machine};
 
@@ -17,6 +17,7 @@ pub(super) async fn run(global: &GlobalOpts, command: StatsCommand) -> Result<()
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 	)?;
 
 	match command {
@@ -29,4 +30,3 @@ pub(super) async fn run(global: &GlobalOpts, command: StatsCommand) -> Result<()
 		}
 	}
 }
-

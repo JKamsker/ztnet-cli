@@ -6,7 +6,7 @@ use reqwest::Method;
 use crate::cli::{GlobalOpts, PlanetCommand};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 
 use super::common::load_config_store;
 
@@ -43,6 +43,7 @@ pub(super) async fn run(global: &GlobalOpts, command: PlanetCommand) -> Result<(
 				effective.timeout,
 				effective.retries,
 				global.dry_run,
+				ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 			)?;
 
 			let bytes = client
@@ -72,4 +73,3 @@ pub(super) async fn run(global: &GlobalOpts, command: PlanetCommand) -> Result<(
 		}
 	}
 }
-

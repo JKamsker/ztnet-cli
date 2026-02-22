@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::cli::{ExportCommand, GlobalOpts};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
-use crate::http::HttpClient;
+use crate::http::{ClientUi, HttpClient};
 
 use super::common::{load_config_store, write_text_output};
 use super::resolve::{resolve_network_id, resolve_org_id};
@@ -21,6 +21,7 @@ pub(super) async fn run(global: &GlobalOpts, command: ExportCommand) -> Result<(
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 	)?;
 
 	match command {
@@ -198,4 +199,3 @@ fn write_export_output(
 	let json = serde_json::to_string_pretty(value)?;
 	write_text_output(&json, out, global)
 }
-

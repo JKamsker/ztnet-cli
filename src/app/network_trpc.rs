@@ -7,6 +7,7 @@ use crate::cli::{
 };
 use crate::context::EffectiveConfig;
 use crate::error::CliError;
+use crate::http::ClientUi;
 use crate::output;
 
 use super::common::confirm;
@@ -325,6 +326,7 @@ fn trpc_authed(global: &GlobalOpts, effective: &EffectiveConfig) -> Result<TrpcC
 		effective.timeout,
 		effective.retries,
 		global.dry_run,
+		ClientUi::new(global.quiet, global.no_color, Some(effective.profile.clone())),
 	)?
 	.with_cookie(Some(cookie)))
 }
