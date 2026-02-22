@@ -6,4 +6,4 @@
 - [x] Document Chocolatey install/publish steps
 - [x] Add helper script to set `CHOCO_API_KEY` secret
 - [x] Validate `choco pack` locally
-- [ ] Publish initial Chocolatey package (requires API key)
+- [x] Publish initial Chocolatey package (requires API key)
