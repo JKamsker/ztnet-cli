@@ -34,57 +34,7 @@ jobs:
 
       - name: Determine version + tag
         id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-            VERSION="${TAG#v}"
-            MODE="tag"
-          else
-            MODE="auto"
-            VERSION="$(
-            python - <<'PY'
-            import re
-            import subprocess
-            import tomllib
-            from pathlib import Path
-
-            data = tomllib.loads(Path("Cargo.toml").read_text("utf-8"))
-            current = data["package"]["version"]
-
-            m = re.fullmatch(r"(\\d+)\\.(\\d+)\\.(\\d+)", current)
-            if not m:
-              raise SystemExit(f"Unsupported version format: {current!r}")
-
-            major, minor, patch = map(int, m.groups())
-
-            while True:
-              patch += 1
-              candidate = f"{major}.{minor}.{patch}"
-              tag = f"v{candidate}"
-              result = subprocess.run(
-                ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-              )
-              if result.returncode != 0:
-                print(candidate)
-                break
-            PY
-            )"
-            TAG="v${VERSION}"
-          fi
-
-          if [[ -z "${VERSION:-}" ]]; then
-            echo "Failed to determine VERSION"
-            exit 1
-          fi
-
-          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        run: python scripts/gha/release/determine_meta.py
 
   test:
     name: Test
@@ -99,54 +49,7 @@ jobs:
 
       - name: Apply version bump (auto mode)
         if: ${{ needs.meta.outputs.mode == 'auto' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-
-          python - <<PY
-          from pathlib import Path
-
-          crate_name = "ztnet"
-          new_version = "${VERSION}"
-
-          cargo_toml = Path("Cargo.toml")
-          cargo_lock = Path("Cargo.lock")
-
-          # Update Cargo.toml: [package].version (minimal edit)
-          lines = cargo_toml.read_text("utf-8").splitlines()
-          in_package = False
-          updated = False
-          for i, line in enumerate(lines):
-            if line.strip() == "[package]":
-              in_package = True
-              continue
-            if in_package and line.startswith("[") and line.strip() != "[package]":
-              in_package = False
-            if in_package and line.strip().startswith("version"):
-              lines[i] = f'version = "{new_version}"'
-              updated = True
-              break
-
-          if not updated:
-            raise SystemExit("Could not update [package].version in Cargo.toml")
-
-          cargo_toml.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-
-          # Update Cargo.lock: root package version (minimal edit)
-          if cargo_lock.is_file():
-            lock_lines = cargo_lock.read_text("utf-8").splitlines()
-            for i, line in enumerate(lock_lines):
-              if line.strip() == f'name = "{crate_name}"':
-                for j in range(i + 1, min(i + 20, len(lock_lines))):
-                  if lock_lines[j].strip().startswith("version ="):
-                    lock_lines[j] = f'version = "{new_version}"'
-                    cargo_lock.write_text("\\n".join(lock_lines) + "\\n", encoding="utf-8")
-                    break
-                else:
-                  raise SystemExit(f"Could not find version for {crate_name} in Cargo.lock")
-                break
-          PY
+        run: python scripts/gha/release/apply_version_bump.py --version "${{ needs.meta.outputs.version }}"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -177,54 +80,7 @@ jobs:
 
       - name: Apply version bump (auto mode)
         if: ${{ needs.meta.outputs.mode == 'auto' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-
-          python - <<PY
-          from pathlib import Path
-
-          crate_name = "ztnet"
-          new_version = "${VERSION}"
-
-          cargo_toml = Path("Cargo.toml")
-          cargo_lock = Path("Cargo.lock")
-
-          # Update Cargo.toml: [package].version (minimal edit)
-          lines = cargo_toml.read_text("utf-8").splitlines()
-          in_package = False
-          updated = False
-          for i, line in enumerate(lines):
-            if line.strip() == "[package]":
-              in_package = True
-              continue
-            if in_package and line.startswith("[") and line.strip() != "[package]":
-              in_package = False
-            if in_package and line.strip().startswith("version"):
-              lines[i] = f'version = "{new_version}"'
-              updated = True
-              break
-
-          if not updated:
-            raise SystemExit("Could not update [package].version in Cargo.toml")
-
-          cargo_toml.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-
-          # Update Cargo.lock: root package version (minimal edit)
-          if cargo_lock.is_file():
-            lock_lines = cargo_lock.read_text("utf-8").splitlines()
-            for i, line in enumerate(lock_lines):
-              if line.strip() == f'name = "{crate_name}"':
-                for j in range(i + 1, min(i + 20, len(lock_lines))):
-                  if lock_lines[j].strip().startswith("version ="):
-                    lock_lines[j] = f'version = "{new_version}"'
-                    cargo_lock.write_text("\\n".join(lock_lines) + "\\n", encoding="utf-8")
-                    break
-                else:
-                  raise SystemExit(f"Could not find version for {crate_name} in Cargo.lock")
-                break
-          PY
+        run: python scripts/gha/release/apply_version_bump.py --version "${{ needs.meta.outputs.version }}"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -234,52 +90,14 @@ jobs:
 
       - name: Determine version
         id: version
-        shell: bash
-        run: |
-          VERSION="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          data = tomllib.loads(Path("Cargo.toml").read_text("utf-8"))
-          print(data["package"]["version"])
-          PY
-          )"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        run: python scripts/gha/release/read_cargo_version.py
 
       - name: Build
         shell: bash
         run: cargo build --release --locked
 
       - name: Package assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
-          TARGET="$(rustc -vV | sed -n 's/^host: //p')"
-
-          mkdir -p dist
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp target/release/ztnet.exe dist/ztnet.exe
-            ASSET="ztnet-${VERSION}-${TARGET}.zip"
-            (cd dist && 7z a -tzip "../${ASSET}" "ztnet.exe" >/dev/null)
-          else
-            cp target/release/ztnet dist/ztnet
-            ASSET="ztnet-${VERSION}-${TARGET}.tar.gz"
-            tar -C dist -czf "${ASSET}" "ztnet"
-          fi
-
-          python - <<PY
-          import hashlib
-          from pathlib import Path
-
-          asset = Path("${ASSET}")
-          h = hashlib.sha256()
-          h.update(asset.read_bytes())
-          (asset.parent / f"{asset.name}.sha256").write_text(f"{h.hexdigest()}  {asset.name}\\n", encoding="utf-8")
-          PY
-
-          mv "${ASSET}" "dist/${ASSET}"
-          mv "${ASSET}.sha256" "dist/${ASSET}.sha256"
+        run: python scripts/gha/release/package_assets.py --version "${{ steps.version.outputs.version }}"
 
       - name: Upload assets
         uses: actions/upload-artifact@v4
@@ -307,91 +125,21 @@ jobs:
 
       - name: Apply version bump (auto mode)
         if: ${{ needs.meta.outputs.mode == 'auto' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
-
-          python - <<PY
-          from pathlib import Path
-
-          crate_name = "ztnet"
-          new_version = "${VERSION}"
-
-          cargo_toml = Path("Cargo.toml")
-          cargo_lock = Path("Cargo.lock")
-
-          # Update Cargo.toml: [package].version (minimal edit)
-          lines = cargo_toml.read_text("utf-8").splitlines()
-          in_package = False
-          updated = False
-          for i, line in enumerate(lines):
-            if line.strip() == "[package]":
-              in_package = True
-              continue
-            if in_package and line.startswith("[") and line.strip() != "[package]":
-              in_package = False
-            if in_package and line.strip().startswith("version"):
-              lines[i] = f'version = "{new_version}"'
-              updated = True
-              break
-
-          if not updated:
-            raise SystemExit("Could not update [package].version in Cargo.toml")
-
-          cargo_toml.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-
-          # Update Cargo.lock: root package version (minimal edit)
-          if cargo_lock.is_file():
-            lock_lines = cargo_lock.read_text("utf-8").splitlines()
-            for i, line in enumerate(lock_lines):
-              if line.strip() == f'name = "{crate_name}"':
-                for j in range(i + 1, min(i + 20, len(lock_lines))):
-                  if lock_lines[j].strip().startswith("version ="):
-                    lock_lines[j] = f'version = "{new_version}"'
-                    cargo_lock.write_text("\\n".join(lock_lines) + "\\n", encoding="utf-8")
-                    break
-                else:
-                  raise SystemExit(f"Could not find version for {crate_name} in Cargo.lock")
-                break
-          PY
+        run: python scripts/gha/release/apply_version_bump.py --version "${{ needs.meta.outputs.version }}"
 
       - name: Determine version
         id: version
-        shell: bash
-        run: |
-          VERSION="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          data = tomllib.loads(Path("Cargo.toml").read_text("utf-8"))
-          print(data["package"]["version"])
-          PY
-          )"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        run: python scripts/gha/release/read_cargo_version.py
 
       - name: Check release existence
         id: check
-        shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ steps.version.outputs.version }}"
-
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: python scripts/gha/release/check_release_exists.py --version "${{ steps.version.outputs.version }}"
 
       - name: Configure git (auto mode)
         if: ${{ steps.check.outputs.exists == 'false' && needs.meta.outputs.mode == 'auto' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        run: python scripts/gha/common/configure_git_bot.py
 
       - name: Download assets (temp, for Scoop hash)
         if: ${{ steps.check.outputs.exists == 'false' && needs.meta.outputs.mode == 'auto' }}
@@ -403,79 +151,17 @@ jobs:
 
       - name: Update `bucket/ztnet.json` (auto mode)
         if: ${{ steps.check.outputs.exists == 'false' && needs.meta.outputs.mode == 'auto' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          VERSION="${{ steps.version.outputs.version }}"
-          SHA_FILE=".tmp_release_dist/ztnet-${VERSION}-x86_64-pc-windows-msvc.zip.sha256"
-          if [[ ! -f "$SHA_FILE" ]]; then
-            echo "Expected $SHA_FILE"
-            ls -la .tmp_release_dist || true
-            exit 1
-          fi
-
-          HASH="$(cut -d' ' -f1 "$SHA_FILE")"
-          if [[ -z "${HASH:-}" ]]; then
-            echo "Failed to parse hash from $SHA_FILE"
-            exit 1
-          fi
-
-          python - <<PY
-          import json
-          from pathlib import Path
-
-          version = "${VERSION}"
-          hash_ = "${HASH}"
-
-          manifest = {
-            "version": version,
-            "description": "ZTNet CLI — manage ZeroTier networks via ZTNet",
-            "homepage": "https://github.com/JKamsker/ztnet-cli",
-            "license": "AGPL-3.0-only",
-            "architecture": {
-              "64bit": {
-                "url": f"https://github.com/JKamsker/ztnet-cli/releases/download/v{version}/ztnet-{version}-x86_64-pc-windows-msvc.zip",
-                "hash": hash_,
-              }
-            },
-            "bin": "ztnet.exe",
-          }
-
-          Path("bucket/ztnet.json").write_text(json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
-          PY
-
-          rm -rf .tmp_release_dist
+        run: python scripts/gha/release/update_scoop_manifest.py --version "${{ steps.version.outputs.version }}" --sha-file ".tmp_release_dist/ztnet-${{ steps.version.outputs.version }}-x86_64-pc-windows-msvc.zip.sha256" --cleanup-dir ".tmp_release_dist"
 
       - name: Commit + tag (auto mode)
         if: ${{ steps.check.outputs.exists == 'false' && needs.meta.outputs.mode == 'auto' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="v${VERSION}"
-
-          git add Cargo.toml Cargo.lock bucket/ztnet.json
-          git commit -m "chore(release): ${TAG}"
-
-          git tag -a "${TAG}" -m "${TAG}"
-
-          git push origin master
-          git push origin --tags
+        run: python scripts/gha/release/commit_and_tag.py --version "${{ steps.version.outputs.version }}"
 
       - name: Publish to crates.io
         if: ${{ steps.check.outputs.exists == 'false' }}
-        shell: bash
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
-            echo "CARGO_REGISTRY_TOKEN is not set; skipping cargo publish"
-            exit 0
-          fi
-          cargo publish --locked
+        run: python scripts/gha/release/publish_crates.py
 
       - name: Download assets
         if: ${{ steps.check.outputs.exists == 'false' }}
@@ -487,13 +173,9 @@ jobs:
 
       - name: Create release
         if: ${{ steps.check.outputs.exists == 'false' }}
-        shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TAG="v${{ steps.version.outputs.version }}"
-          gh release create "$TAG" dist/* --title "$TAG" --generate-notes
+        run: python scripts/gha/release/create_release.py --version "${{ steps.version.outputs.version }}"
 
   winget:
     name: Open WinGet PR
@@ -501,34 +183,19 @@ jobs:
     needs: release
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Check token
         id: token
-        shell: bash
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${WINGET_TOKEN:-}" ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "WINGET_TOKEN not set; skipping"
-          fi
+        run: python scripts/gha/common/check_env_output.py --env-var WINGET_TOKEN --missing-message "WINGET_TOKEN not set; skipping"
 
       - name: Check winget-pkgs has package
         id: pkg
         if: ${{ steps.token.outputs.present == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          url="https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/j/JKamsker/ZTNetCLI?ref=master"
-          code="$(curl -s -o /dev/null -w "%{http_code}" -H "Accept: application/vnd.github+json" "$url")"
-          if [[ "$code" == "200" ]]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Package not in winget-pkgs yet (HTTP $code); skipping"
-          fi
+        run: python scripts/gha/release/check_winget_pkgs_package.py
 
       - name: Publish to WinGet
         if: ${{ steps.token.outputs.present == 'true' && steps.pkg.outputs.exists == 'true' }}
@@ -549,65 +216,13 @@ jobs:
 
       - name: Check token
         id: token
-        shell: bash
         env:
           CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${CHOCO_API_KEY:-}" ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "CHOCO_API_KEY not set; skipping"
-          fi
+        run: python scripts/gha/common/check_env_output.py --env-var CHOCO_API_KEY --missing-message "CHOCO_API_KEY not set; skipping"
 
       - name: Pack + push
         if: ${{ steps.token.outputs.present == 'true' }}
-        shell: pwsh
         env:
           CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $version = "${{ needs.meta.outputs.version }}".Trim()
-          $tag = "v$version"
-
-          $shaUrl = "https://github.com/JKamsker/ztnet-cli/releases/download/$tag/ztnet-$version-x86_64-pc-windows-msvc.zip.sha256"
-          $shaLine = (Invoke-RestMethod $shaUrl).Trim()
-          $hash = $shaLine.Split(' ')[0]
-          if ([string]::IsNullOrWhiteSpace($hash)) {
-            throw "Failed to determine SHA256 for $shaUrl"
-          }
-
-          Remove-Item -Recurse -Force .tmp_choco -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force .tmp_choco/pkg | Out-Null
-
-          Copy-Item -Recurse -Force packaging/chocolatey/ztnet/* .tmp_choco/pkg
-
-          foreach ($path in @(
-            ".tmp_choco/pkg/tools/chocolateyinstall.ps1",
-            ".tmp_choco/pkg/tools/VERIFICATION.txt"
-          )) {
-            $content = Get-Content -Raw $path
-            $content = $content -replace "__CHECKSUM__", $hash
-            Set-Content -Path $path -Value $content -NoNewline
-          }
-
-          New-Item -ItemType Directory -Force .tmp_choco/out | Out-Null
-          choco pack .tmp_choco/pkg/ztnet.nuspec --version $version --outputdirectory .tmp_choco/out --no-progress
-
-          $nupkg = Get-ChildItem .tmp_choco/out -Filter "ztnet.$version.nupkg" | Select-Object -First 1
-          if (-not $nupkg) {
-            throw "Expected nupkg not found in .tmp_choco/out"
-          }
-
-          & choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress 2>&1 | Tee-Object -Variable chocoPushOutput
-          $pushExitCode = $LASTEXITCODE
-          if ($pushExitCode -ne 0) {
-            $pushText = ($chocoPushOutput -join "`n")
-            if ($pushText -match "previous version in a submitted state") {
-              Write-Host "Chocolatey push blocked (previous version pending approval). Skipping."
-              exit 0
-            }
-            throw "choco push failed with exit code $pushExitCode"
-          }
+          ZTNET_VERSION: ${{ needs.meta.outputs.version }}
+        run: .\scripts\gha\chocolatey\publish.ps1

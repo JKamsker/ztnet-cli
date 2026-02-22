@@ -10,19 +10,14 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Check token
         id: token
-        shell: bash
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${WINGET_TOKEN:-}" ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "WINGET_TOKEN not set; skipping"
-          fi
+        run: python scripts/gha/common/check_env_output.py --env-var WINGET_TOKEN --missing-message "WINGET_TOKEN not set; skipping"
 
       - name: Publish to WinGet
         if: ${{ steps.token.outputs.present == 'true' }}
@@ -31,4 +26,3 @@ jobs:
           identifier: JKamsker.ZTNetCLI
           installers-regex: 'x86_64-pc-windows-msvc\\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
-

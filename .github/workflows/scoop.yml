@@ -23,64 +23,12 @@ jobs:
           ref: master
 
       - name: Configure git
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        run: python scripts/gha/common/configure_git_bot.py
 
       - name: Update `bucket/ztnet.json`
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
-          VERSION="${TAG#v}"
-
-          mkdir -p .tmp_scoop
-          gh release download "$TAG" \
-            -p "ztnet-${VERSION}-x86_64-pc-windows-msvc.zip.sha256" \
-            -D .tmp_scoop
-
-          HASH="$(cut -d' ' -f1 ".tmp_scoop/ztnet-${VERSION}-x86_64-pc-windows-msvc.zip.sha256")"
-
-          python - <<PY
-          import json
-          from pathlib import Path
-
-          version = "${VERSION}"
-          hash_ = "${HASH}"
-
-          manifest = {
-            "version": version,
-            "description": "ZTNet CLI — manage ZeroTier networks via ZTNet",
-            "homepage": "https://github.com/JKamsker/ztnet-cli",
-            "license": "AGPL-3.0-only",
-            "architecture": {
-              "64bit": {
-                "url": f"https://github.com/JKamsker/ztnet-cli/releases/download/v{version}/ztnet-{version}-x86_64-pc-windows-msvc.zip",
-                "hash": hash_,
-              }
-            },
-            "bin": "ztnet.exe",
-          }
-
-          Path("bucket/ztnet.json").write_text(json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
-          PY
-
-          rm -rf .tmp_scoop
+        run: python scripts/gha/scoop/update_manifest_from_release.py --tag "${{ github.event.release.tag_name }}"
 
       - name: Commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-
-          git add bucket/ztnet.json
-          git commit -m "chore(scoop): update manifest for ${{ github.event.release.tag_name }}"
-          git push origin master
-
+        run: python scripts/gha/scoop/commit_if_changed.py --tag "${{ github.event.release.tag_name }}"
