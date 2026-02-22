@@ -14,15 +14,22 @@ Suggested approach:
 
 ## Automation (recommended after initial submission)
 
-This repo includes a GitHub Actions workflow that can open WinGet update PRs automatically on every GitHub Release:
+This repo can open WinGet update PRs automatically on every automated release:
 
-- Workflow: `.github/workflows/winget.yml`
+- Workflow: `.github/workflows/release.yml` (`winget` job)
 - Action: `vedantmgoyal9/winget-releaser`
 - Identifier: `JKamsker.ZTNetCLI`
 
-For automated releases created by `.github/workflows/release.yml`, the WinGet update is run from the `winget` job inside that same workflow (because GitHub does not trigger `on: release` workflows for releases created with `GITHUB_TOKEN`).
+Note: `.github/workflows/winget.yml` exists but is not reliable for automated releases created with `GITHUB_TOKEN` (GitHub does not trigger `on: release` workflows for those releases).
 
 Prerequisites (per action docs):
 - At least one version of the package must already exist in `microsoft/winget-pkgs` (the action uses it as a base).
 - A fork of `microsoft/winget-pkgs` must exist under the same account/org as this repo (or configure the action accordingly).
 - A classic PAT secret `WINGET_TOKEN` (scope: `public_repo`) must be configured in this repo.
+
+Implementation detail:
+- The `winget` job in `.github/workflows/release.yml` also checks if the package exists in `microsoft/winget-pkgs` yet and skips until the initial submission PR is merged (to keep releases green).
+
+### Token creation
+
+GitHub classic PATs cannot be created via `gh` CLI. Create one in the GitHub UI, then store it as `WINGET_TOKEN`.

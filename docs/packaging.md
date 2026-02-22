@@ -54,3 +54,5 @@ Recommended workflow:
 Notes:
 - A `.zip` asset is typically packaged as a “portable” app in WinGet. `wingetcreate` guides the exact schema fields required.
 - Automated WinGet update PRs run from the `winget` job in `.github/workflows/release.yml`. See `packaging/winget/README.md` for prerequisites.
+- The workflow skips WinGet automation until the initial package exists in `microsoft/winget-pkgs` (first PR merged).
+- `WINGET_TOKEN` must be a classic PAT (created in the GitHub UI; `gh` cannot create classic PATs).

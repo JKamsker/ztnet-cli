@@ -191,4 +191,4 @@ Releases are automated on GitHub:
   - builds release binaries and publishes a GitHub Release
   - publishes to crates.io when `CARGO_REGISTRY_TOKEN` is set
 - Scoop bucket manifest updates are applied by the `scoop` job in `.github/workflows/release.yml` (updates `bucket/ztnet.json`).
-- WinGet PR automation (optional) is applied by the `winget` job in `.github/workflows/release.yml` (requires `WINGET_TOKEN` and an existing base manifest in `microsoft/winget-pkgs`).
+- WinGet PR automation (optional) is applied by the `winget` job in `.github/workflows/release.yml` (requires `WINGET_TOKEN` (classic PAT) and an existing base manifest in `microsoft/winget-pkgs`; the job skips until the initial submission is merged).
