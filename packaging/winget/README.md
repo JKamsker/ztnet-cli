@@ -20,6 +20,8 @@ This repo includes a GitHub Actions workflow that can open WinGet update PRs aut
 - Action: `vedantmgoyal9/winget-releaser`
 - Identifier: `JKamsker.ZTNetCLI`
 
+For automated releases created by `.github/workflows/release.yml`, the WinGet update is run from the `winget` job inside that same workflow (because GitHub does not trigger `on: release` workflows for releases created with `GITHUB_TOKEN`).
+
 Prerequisites (per action docs):
 - At least one version of the package must already exist in `microsoft/winget-pkgs` (the action uses it as a base).
 - A fork of `microsoft/winget-pkgs` must exist under the same account/org as this repo (or configure the action accordingly).

@@ -24,7 +24,8 @@ scoop bucket add ztnet-cli https://github.com/JKamsker/ztnet-cli
 scoop install ztnet-cli/ztnet
 ```
 
-The manifest is `bucket/ztnet.json` and is kept up-to-date by `.github/workflows/scoop.yml` when a GitHub Release is published.
+The manifest is `bucket/ztnet.json` and is updated on each automated release by the `scoop` job in `.github/workflows/release.yml`.
+(`.github/workflows/scoop.yml` is only useful for manual releases created outside the release workflow.)
 
 ### Submit to a separate bucket
 
@@ -52,4 +53,4 @@ Recommended workflow:
 
 Notes:
 - A `.zip` asset is typically packaged as a “portable” app in WinGet. `wingetcreate` guides the exact schema fields required.
-- This repo also contains `.github/workflows/winget.yml`, which can open WinGet update PRs automatically on each GitHub Release. See `packaging/winget/README.md`.
+- Automated WinGet update PRs run from the `winget` job in `.github/workflows/release.yml`. See `packaging/winget/README.md` for prerequisites.

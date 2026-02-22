@@ -9,6 +9,7 @@ Source spec: `docs/Tasks/auto-release-every-push/plan.md`
 - [x] Trigger release workflow from `version-bump` (workflow_dispatch)
 - [x] Update release workflow to trigger on tags, run tests, and publish on every new tag
 - [x] Fix release workflow `cargo publish` dirty workspace error
+- [x] Run Scoop/WinGet automation inside release workflow (release event is suppressed)
 - [x] Add Scoop bucket manifest in-repo + automate updates on release
 - [x] Add WinGet workflow to open PRs on every GitHub Release (token-gated)
 - [x] Update docs (release process + Scoop/WinGet usage)
