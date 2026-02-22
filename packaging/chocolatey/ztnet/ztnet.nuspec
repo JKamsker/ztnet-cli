@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>ztnet</id>
+    <version>0.0.0</version>
+    <title>ZTNet CLI</title>
+    <authors>JKamsker</authors>
+    <owners>JKamsker</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <licenseUrl>https://github.com/JKamsker/ztnet-cli/blob/master/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/JKamsker/ztnet-cli</projectUrl>
+    <description>ZTNet CLI — manage ZeroTier networks via ZTNet.</description>
+    <summary>ZTNet CLI</summary>
+    <tags>zerotier ztnet cli</tags>
+    <packageSourceUrl>https://github.com/JKamsker/ztnet-cli/tree/master/packaging/chocolatey/ztnet</packageSourceUrl>
+  </metadata>
+
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
+

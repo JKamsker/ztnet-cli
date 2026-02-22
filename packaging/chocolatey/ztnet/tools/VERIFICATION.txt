@@ -1,0 +1,13 @@
+VERIFICATION
+============
+
+The Chocolatey package downloads the release asset from GitHub:
+
+- URL: https://github.com/JKamsker/ztnet-cli/releases/download/v<version>/ztnet-<version>-x86_64-pc-windows-msvc.zip
+- Checksum (SHA256): __CHECKSUM__
+
+To verify:
+1. Download the ZIP from the URL above.
+2. Compute the SHA256 checksum.
+3. Ensure it matches the value above.
+
