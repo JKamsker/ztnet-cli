@@ -51,7 +51,7 @@ jobs:
           data = tomllib.loads(cargo_toml.read_text("utf-8"))
           current = data["package"]["version"]
 
-          m = re.fullmatch(r"(\\d+)\\.(\\d+)\\.(\\d+)", current)
+          m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", current)
           if not m:
             raise SystemExit(f"Unsupported version format: {current!r}")
 
