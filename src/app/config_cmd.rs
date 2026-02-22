@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use crate::cli::{ConfigCommand, GlobalOpts, OutputFormat};
 use crate::config::{self, Config};
+use crate::context::canonical_host_key;
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
 use crate::host::{api_base_candidates, normalize_host_input};
@@ -175,31 +176,57 @@ fn set_config_key(cfg: &mut Config, key: &str, value: &str) -> Result<(), CliErr
 			Ok(())
 		}
 		["profiles", profile, field] => {
-			let p = cfg.profile_mut(profile);
 			match *field {
-				"host" => p.host = Some(normalize_host_input(value)?),
-				"token" => p.token = Some(value.to_string()),
-				"default_org" => p.default_org = Some(value.to_string()),
-				"default_network" => p.default_network = Some(value.to_string()),
-				"output" => {
-					p.output = Some(parse_output_format(value)?);
+				"host" => {
+					let normalized = normalize_host_input(value)?;
+					let host_key = canonical_host_key(&normalized)?;
+
+					{
+						let p = cfg.profile_mut(profile);
+						p.host = Some(normalized);
+					}
+
+					let stale_keys: Vec<String> = cfg
+						.host_defaults
+						.iter()
+						.filter(|(key, mapped_profile)| {
+							mapped_profile.as_str() == *profile && key.as_str() != host_key.as_str()
+						})
+						.map(|(key, _)| key.clone())
+						.collect();
+					for key in stale_keys {
+						cfg.host_defaults.remove(&key);
+					}
+
+					cfg.host_defaults.entry(host_key).or_insert_with(|| profile.to_string());
 				}
-				"timeout" => {
-					humantime::parse_duration(value).map_err(|_| {
-						CliError::InvalidArgument(format!("invalid timeout value: {value}"))
-					})?;
-					p.timeout = Some(value.to_string());
-				}
-				"retries" => {
-					let n = value.parse::<u32>().map_err(|_| {
-						CliError::InvalidArgument(format!("invalid retries value: {value}"))
-					})?;
-					p.retries = Some(n);
-				}
-				_ => {
-					return Err(CliError::InvalidArgument(format!(
-						"unsupported key: {key}"
-					)))
+				other => {
+					let p = cfg.profile_mut(profile);
+					match other {
+						"token" => p.token = Some(value.to_string()),
+						"default_org" => p.default_org = Some(value.to_string()),
+						"default_network" => p.default_network = Some(value.to_string()),
+						"output" => {
+							p.output = Some(parse_output_format(value)?);
+						}
+						"timeout" => {
+							humantime::parse_duration(value).map_err(|_| {
+								CliError::InvalidArgument(format!("invalid timeout value: {value}"))
+							})?;
+							p.timeout = Some(value.to_string());
+						}
+						"retries" => {
+							let n = value.parse::<u32>().map_err(|_| {
+								CliError::InvalidArgument(format!("invalid retries value: {value}"))
+							})?;
+							p.retries = Some(n);
+						}
+						_ => {
+							return Err(CliError::InvalidArgument(format!(
+								"unsupported key: {key}"
+							)))
+						}
+					}
 				}
 			}
 			Ok(())
@@ -216,19 +243,38 @@ fn unset_config_key(cfg: &mut Config, key: &str) -> Result<(), CliError> {
 			Ok(())
 		}
 		["profiles", profile, field] => {
-			let p = cfg.profile_mut(profile);
 			match *field {
-				"host" => p.host = None,
-				"token" => p.token = None,
-				"default_org" => p.default_org = None,
-				"default_network" => p.default_network = None,
-				"output" => p.output = None,
-				"timeout" => p.timeout = None,
-				"retries" => p.retries = None,
-				_ => {
-					return Err(CliError::InvalidArgument(format!(
-						"unsupported key: {key}"
-					)))
+				"host" => {
+					{
+						let p = cfg.profile_mut(profile);
+						p.host = None;
+					}
+
+					let keys_to_remove: Vec<String> = cfg
+						.host_defaults
+						.iter()
+						.filter(|(_, mapped_profile)| mapped_profile.as_str() == *profile)
+						.map(|(key, _)| key.clone())
+						.collect();
+					for key in keys_to_remove {
+						cfg.host_defaults.remove(&key);
+					}
+				}
+				other => {
+					let p = cfg.profile_mut(profile);
+					match other {
+						"token" => p.token = None,
+						"default_org" => p.default_org = None,
+						"default_network" => p.default_network = None,
+						"output" => p.output = None,
+						"timeout" => p.timeout = None,
+						"retries" => p.retries = None,
+						_ => {
+							return Err(CliError::InvalidArgument(format!(
+								"unsupported key: {key}"
+							)))
+						}
+					}
 				}
 			}
 			Ok(())
