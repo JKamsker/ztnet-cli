@@ -7,4 +7,4 @@ Source spec: `docs/Tasks/auto-release-every-push/plan.md`
 - [x] Update release workflow to trigger on tags, run tests, and publish on every new tag
 - [x] Add Scoop bucket manifest in-repo + automate updates on release
 - [x] Add WinGet workflow to open PRs on every GitHub Release (token-gated)
-- [ ] Update docs (release process + Scoop/WinGet usage)
+- [x] Update docs (release process + Scoop/WinGet usage)

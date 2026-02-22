@@ -180,3 +180,15 @@ src/
 | `thiserror` | Error type derivation |
 | `humantime` | Duration parsing (e.g., `30s`) |
 | `url` | URL parsing and joining |
+
+## Release automation
+
+Releases are automated on GitHub:
+
+- Every push to `master` bumps the patch version in `Cargo.toml` (and the root package version in `Cargo.lock`) and creates a `v<version>` tag via `.github/workflows/version-bump.yml`.
+- Every tag push (`v*`) runs the release pipeline via `.github/workflows/release.yml`:
+  - runs `cargo test --locked`
+  - builds release binaries and publishes a GitHub Release
+  - publishes to crates.io when `CARGO_REGISTRY_TOKEN` is set
+- Scoop bucket manifest updates happen on each GitHub Release via `.github/workflows/scoop.yml` (updates `bucket/ztnet.json`).
+- WinGet PR automation (optional) runs on each GitHub Release via `.github/workflows/winget.yml` (requires `WINGET_TOKEN` and an existing base manifest in `microsoft/winget-pkgs`).

@@ -2,6 +2,8 @@
 
 This repo publishes GitHub Release assets that can be used by Windows package managers.
 
+It also ships an in-repo Scoop bucket manifest at `bucket/ztnet.json` that is automatically updated on each GitHub Release.
+
 ## Release assets
 
 The GitHub Release workflow uploads these assets (names include the Rust host target triple):
@@ -13,7 +15,20 @@ The GitHub Release workflow uploads these assets (names include the Rust host ta
 
 ## Scoop
 
-Scoop manifests live in a Scoop bucket repo (not this repo). Use the template in `packaging/scoop/ztnet.json.template` and fill:
+### Install from this repo (bucket)
+
+This repository can be used directly as a Scoop bucket:
+
+```powershell
+scoop bucket add ztnet-cli https://github.com/JKamsker/ztnet-cli
+scoop install ztnet-cli/ztnet
+```
+
+The manifest is `bucket/ztnet.json` and is kept up-to-date by `.github/workflows/scoop.yml` when a GitHub Release is published.
+
+### Submit to a separate bucket
+
+If you prefer to publish to a dedicated Scoop bucket repository, use the template in `packaging/scoop/ztnet.json.template` and fill:
 
 - `version`
 - `url` (points to the GitHub Release asset)
@@ -37,4 +52,4 @@ Recommended workflow:
 
 Notes:
 - A `.zip` asset is typically packaged as a “portable” app in WinGet. `wingetcreate` guides the exact schema fields required.
-
+- This repo also contains `.github/workflows/winget.yml`, which can open WinGet update PRs automatically on each GitHub Release. See `packaging/winget/README.md`.
