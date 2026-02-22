@@ -123,13 +123,6 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Download assets
-        uses: actions/download-artifact@v4
-        with:
-          pattern: release-*
-          path: dist
-          merge-multiple: true
-
       - name: Determine version
         id: version
         shell: bash
@@ -171,6 +164,14 @@ jobs:
             exit 0
           fi
           cargo publish --locked
+
+      - name: Download assets
+        if: ${{ steps.check.outputs.exists == 'false' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
 
       - name: Create release
         if: ${{ steps.check.outputs.exists == 'false' }}
