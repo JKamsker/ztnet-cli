@@ -100,7 +100,7 @@ Configuration values are resolved in this order (highest priority first):
 
 ```bash
 # Save a token to a specific profile
-ztnet config set profiles.staging.host https://staging.example.com
+ztnet --profile staging config set host https://staging.example.com
 ztnet --profile staging auth set-token STAGING_TOKEN
 
 # Switch the active profile
@@ -109,6 +109,8 @@ ztnet auth profiles use staging
 # List all profiles
 ztnet auth profiles list
 ```
+
+**Note:** `auth set-token` validates the token against the server by default. Use `--no-validate` to skip the check.
 
 ### Host defaults (host-bound auth)
 
@@ -160,13 +162,23 @@ ztnet config context clear
 | `config context set` | Set default org and/or network |
 | `config context clear` | Clear default org and network |
 
+### Host normalization and validation
+
+When setting a host (`config set host <URL>` or `profiles.<name>.host`), ztnet-cli normalizes the URL (trims whitespace, infers a scheme, removes trailing slashes) and validates it against the server by default (including correcting a missing/extra `/api` if needed). Use `--no-validate` to skip the server check.
+
+If a request fails because the host was configured with (or without) a trailing `/api` incorrectly, the CLI can auto-retry with the other variant and print a banner with a suggested fix (unless `--quiet`).
+
 ### Dotted key examples
 
 ```bash
 ztnet config get active_profile
-ztnet config set profiles.default.host https://ztnet.example.com
+ztnet config set host https://ztnet.example.com
+ztnet config set profiles.default.host https://ztnet.example.com   # equivalent
 ztnet config set profiles.default.output json
 ztnet config set profiles.default.timeout 60s
 ztnet config set profiles.default.retries 5
 ztnet config unset profiles.default.default_org
+
+# Skip host validation (format is still normalized)
+ztnet config set host https://ztnet.example.com --no-validate
 ```
