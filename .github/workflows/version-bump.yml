@@ -89,7 +89,7 @@ jobs:
           if not updated:
             raise SystemExit("Could not update [package].version in Cargo.toml")
 
-          cargo_toml.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+          cargo_toml.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
           # Update Cargo.lock: root package version (minimal edit)
           if cargo_lock.is_file():
@@ -99,7 +99,7 @@ jobs:
                 for j in range(i + 1, min(i + 20, len(lock_lines))):
                   if lock_lines[j].strip().startswith("version ="):
                     lock_lines[j] = f'version = "{new_version}"'
-                    cargo_lock.write_text("\\n".join(lock_lines) + "\\n", encoding="utf-8")
+                    cargo_lock.write_text("\n".join(lock_lines) + "\n", encoding="utf-8")
                     break
                 else:
                   raise SystemExit(f"Could not find version for {crate_name} in Cargo.lock")
