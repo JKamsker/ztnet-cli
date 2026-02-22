@@ -369,4 +369,13 @@ jobs:
             throw "Expected nupkg not found in .tmp_choco/out"
           }
 
-          choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress
+          & choco push $nupkg.FullName --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress 2>&1 | Tee-Object -Variable chocoPushOutput
+          $pushExitCode = $LASTEXITCODE
+          if ($pushExitCode -ne 0) {
+            $pushText = ($chocoPushOutput -join "`n")
+            if ($pushText -match "previous version in a submitted state") {
+              Write-Host "Chocolatey push blocked (previous version pending approval). Skipping."
+              exit 0
+            }
+            throw "choco push failed with exit code $pushExitCode"
+          }
