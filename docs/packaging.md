@@ -56,3 +56,12 @@ Notes:
 - Automated WinGet update PRs run from the `winget` job in `.github/workflows/release.yml`. See `packaging/winget/README.md` for prerequisites.
 - The workflow skips WinGet automation until the initial package exists in `microsoft/winget-pkgs` (first PR merged).
 - `WINGET_TOKEN` must be a classic PAT (created in the GitHub UI; `gh` cannot create classic PATs).
+
+## Chocolatey
+
+Chocolatey packages are published to the Chocolatey community feed.
+
+- Package id: `ztnet`
+- Install: `choco install ztnet`
+- Automation: the `chocolatey` job in `.github/workflows/release.yml` packs and pushes on each automated release when `CHOCO_API_KEY` is set.
+- `CHOCO_API_KEY` is the API key from `https://push.chocolatey.org/account`.
