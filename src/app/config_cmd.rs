@@ -208,7 +208,7 @@ fn set_config_key(
 						cfg.host_defaults.remove(&key);
 					}
 
-					cfg.host_defaults.entry(host_key).or_insert_with(|| profile.to_string());
+					cfg.host_defaults.insert(host_key, profile.to_string());
 				}
 				other => {
 					let p = cfg.profile_mut(profile);
@@ -307,10 +307,11 @@ fn parse_output_format(value: &str) -> Result<crate::cli::OutputFormat, CliError
 }
 
 fn is_profile_host_key(key: &str) -> bool {
-	matches!(
-		key.split('.').collect::<Vec<_>>().as_slice(),
-		["profiles", _, "host"]
-	)
+	let mut parts = key.split('.');
+	parts.next() == Some("profiles")
+		&& parts.next().is_some()
+		&& parts.next() == Some("host")
+		&& parts.next().is_none()
 }
 
 async fn select_valid_ztnet_host(base: &str, timeout: Duration) -> Result<String, CliError> {

@@ -41,10 +41,14 @@ pub(crate) fn normalize_base_url_for_join(url: &mut Url) {
 	}
 }
 
-pub(crate) fn normalize_and_join_url(base_url: &mut Url, path: &str) -> Result<Url, CliError> {
-	normalize_base_url_for_join(base_url);
+pub(crate) fn join_relative_url(base_url: &Url, path: &str) -> Result<Url, CliError> {
 	let relative = path.trim().trim_start_matches('/');
 	Ok(base_url.join(relative)?)
+}
+
+pub(crate) fn normalize_and_join_url(base_url: &mut Url, path: &str) -> Result<Url, CliError> {
+	normalize_base_url_for_join(base_url);
+	join_relative_url(base_url, path)
 }
 
 pub(crate) fn parse_normalize_and_join_url(base: &str, path: &str) -> Result<Url, CliError> {
@@ -66,8 +70,7 @@ pub(crate) fn build_url_for_base(
 	let base = bases.get(base_idx).ok_or_else(|| {
 		CliError::InvalidArgument("invalid internal host base index".to_string())
 	})?;
-	let mut base_url = base.url.clone();
-	normalize_and_join_url(&mut base_url, path)
+	join_relative_url(&base.url, path)
 }
 
 pub(crate) fn maybe_warn_host_autofix<F>(
@@ -144,8 +147,8 @@ where
 				}
 
 				let url = build_url_for_base(bases, idx, path, allow_absolute)?;
-				let attempt = attempt(url).await;
-				if let Ok(value) = attempt {
+				let alt_result = attempt(url).await;
+				if let Ok(value) = alt_result {
 					active_base.store(idx, Ordering::Relaxed);
 					on_switch(idx);
 					return Ok(value);

@@ -480,12 +480,16 @@ fn print_dry_run(
 
 fn redact_token(token: &str) -> String {
 	const KEEP: usize = 4;
-	if token.len() <= KEEP * 2 {
+	let char_count = token.chars().count();
+	if char_count <= KEEP * 2 {
 		return "REDACTED".to_string();
 	}
-	format!(
-		"{}…{}",
-		&token[..KEEP],
-		&token[token.len() - KEEP..]
-	)
+
+	let prefix: String = token.chars().take(KEEP).collect();
+
+	let mut suffix_chars: Vec<char> = token.chars().rev().take(KEEP).collect();
+	suffix_chars.reverse();
+	let suffix: String = suffix_chars.into_iter().collect();
+
+	format!("{prefix}…{suffix}")
 }
