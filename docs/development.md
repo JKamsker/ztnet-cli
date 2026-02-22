@@ -185,11 +185,10 @@ src/
 
 Releases are automated on GitHub:
 
-- Every push to `master` bumps the patch version in `Cargo.toml` (and the root package version in `Cargo.lock`) and creates a `v<version>` tag via `.github/workflows/version-bump.yml`.
-- The version bump workflow triggers the release pipeline via `workflow_dispatch` on the new `v<version>` tag (and `.github/workflows/release.yml` also supports manual tag pushes `v*`):
-  - runs `cargo test --locked`
-  - builds release binaries and publishes a GitHub Release
-  - publishes to crates.io when `CARGO_REGISTRY_TOKEN` is set
-- Scoop bucket manifest updates are applied by the `scoop` job in `.github/workflows/release.yml` (updates `bucket/ztnet.json`).
+- Every push to `master` runs `.github/workflows/release.yml`, which:
+  - bumps the patch version in `Cargo.toml` (and the root package version in `Cargo.lock`)
+  - updates the Scoop manifest in-repo (`bucket/ztnet.json`)
+  - commits all of the above in a single `chore(release): v<version>` commit and tags it as `v<version>`
+  - runs `cargo test --locked`, builds release binaries, publishes a GitHub Release, and publishes to crates.io when `CARGO_REGISTRY_TOKEN` is set
 - WinGet PR automation (optional) is applied by the `winget` job in `.github/workflows/release.yml` (requires `WINGET_TOKEN` (classic PAT) and an existing base manifest in `microsoft/winget-pkgs`; the job skips until the initial submission is merged).
 - Chocolatey publishing (optional) is applied by the `chocolatey` job in `.github/workflows/release.yml` (requires `CHOCO_API_KEY`).

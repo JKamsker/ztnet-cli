@@ -24,7 +24,7 @@ scoop bucket add ztnet-cli https://github.com/JKamsker/ztnet-cli
 scoop install ztnet-cli/ztnet
 ```
 
-The manifest is `bucket/ztnet.json` and is updated on each automated release by the `scoop` job in `.github/workflows/release.yml`.
+The manifest is `bucket/ztnet.json` and is updated on each automated release by `.github/workflows/release.yml` (batched into the same `chore(release): v<version>` commit).
 (`.github/workflows/scoop.yml` is only useful for manual releases created outside the release workflow.)
 
 ### Submit to a separate bucket
