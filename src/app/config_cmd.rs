@@ -4,6 +4,7 @@ use crate::cli::{ConfigCommand, GlobalOpts, OutputFormat};
 use crate::config::{self, Config};
 use crate::context::resolve_effective_config;
 use crate::error::CliError;
+use crate::host::normalize_host_input;
 use crate::output;
 
 use super::common::{
@@ -29,10 +30,16 @@ pub(super) async fn run(global: &GlobalOpts, command: ConfigCommand) -> Result<(
 			Ok(())
 		}
 		ConfigCommand::Set(args) => {
-			set_config_key(&mut cfg, &args.key, &args.value)?;
+			let key = if args.key == "host" {
+				format!("profiles.{}.host", effective.profile)
+			} else {
+				args.key.clone()
+			};
+
+			set_config_key(&mut cfg, &key, &args.value)?;
 			config::save_config(&config_path, &cfg)?;
 			if !global.quiet {
-				eprintln!("Set {}.", args.key);
+				eprintln!("Set {}.", key);
 			}
 			Ok(())
 		}
@@ -151,7 +158,7 @@ fn set_config_key(cfg: &mut Config, key: &str, value: &str) -> Result<(), CliErr
 		["profiles", profile, field] => {
 			let p = cfg.profile_mut(profile);
 			match *field {
-				"host" => p.host = Some(value.to_string()),
+				"host" => p.host = Some(normalize_host_input(value)?),
 				"token" => p.token = Some(value.to_string()),
 				"default_org" => p.default_org = Some(value.to_string()),
 				"default_network" => p.default_network = Some(value.to_string()),
@@ -223,4 +230,3 @@ fn parse_output_format(value: &str) -> Result<crate::cli::OutputFormat, CliError
 		))),
 	}
 }
-

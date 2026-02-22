@@ -23,7 +23,7 @@ Source spec: `docs/Tasks/Initial.md`
 - [x] Create task checklist
 - [x] Support base URLs with path prefixes (`https://host/prefix`)
 - [x] Add host normalization helpers (smart scheme, trim, trailing slash)
-- [ ] Add `ztnet config set host <URL>` alias + `config set --no-validate`
+- [x] Add `ztnet config set host <URL>` alias + `config set --no-validate`
 - [ ] Validate host as ZTNet instance on set (try `/api` variants)
 - [ ] Validate token by default in `auth set-token` (`--no-validate` bypass)
 - [ ] Runtime host auto-fix (toggle `/api`) + big warning banner
