@@ -65,3 +65,4 @@ Chocolatey packages are published to the Chocolatey community feed.
 - Install: `choco install ztnet`
 - Automation: the `chocolatey` job in `.github/workflows/release.yml` packs and pushes on each automated release when `CHOCO_API_KEY` is set.
 - `CHOCO_API_KEY` is the API key from `https://push.chocolatey.org/account`.
+- Note: the Chocolatey community feed moderates first submissions. Until there is an approved stable release, subsequent pushes can be rejected with a 403 “submitted state” error; the workflow treats that specific case as a skip (non-fatal).

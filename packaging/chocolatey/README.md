@@ -18,6 +18,8 @@ The installer downloads the Windows ZIP asset from the GitHub Release for the pa
 
 If `CHOCO_API_KEY` is missing/empty, the job skips.
 
+Note: the Chocolatey community feed moderates first submissions. Until there is an approved stable release, subsequent pushes can be rejected with a 403 “submitted state” error; the workflow treats that specific case as a skip (non-fatal).
+
 ## Manual publish
 
 1. Get your API key from `https://push.chocolatey.org/account`.
@@ -25,4 +27,3 @@ If `CHOCO_API_KEY` is missing/empty, the job skips.
    - `choco pack packaging/chocolatey/ztnet/ztnet.nuspec --version <VERSION>`
 3. Push:
    - `choco push ztnet.<VERSION>.nupkg --source https://push.chocolatey.org/ --api-key <KEY>`
-
