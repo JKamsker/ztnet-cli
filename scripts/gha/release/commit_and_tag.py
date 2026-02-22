@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from pathlib import Path
 
 
 def _run(cmd: list[str]) -> None:
@@ -17,7 +18,11 @@ def main() -> int:
 
     tag = f"v{args.version}"
 
-    _run(["git", "add", "Cargo.toml", "Cargo.lock", "bucket/ztnet.json"])
+    paths = ["Cargo.toml", "Cargo.lock", "bucket/ztnet.json"]
+    if Path("npm/package.json").is_file():
+        paths.append("npm/package.json")
+
+    _run(["git", "add", *paths])
 
     staged = subprocess.run(["git", "diff", "--cached", "--quiet"], check=False)
     if staged.returncode == 0:
@@ -33,4 +38,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

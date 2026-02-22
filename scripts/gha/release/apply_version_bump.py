@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -72,19 +73,32 @@ def _update_cargo_lock_root_version(cargo_lock: Path, crate_name: str, new_versi
     cargo_lock.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _update_npm_package_json_version(npm_package_json: Path, new_version: str) -> None:
+    if not npm_package_json.is_file():
+        return
+
+    data = json.loads(npm_package_json.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit(f"Unsupported npm package.json format: {npm_package_json}")
+
+    data["version"] = new_version
+    npm_package_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Apply a version bump to Cargo.toml/Cargo.lock.")
     parser.add_argument("--version", required=True)
     parser.add_argument("--crate-name", default="ztnet")
     parser.add_argument("--cargo-toml", default="Cargo.toml")
     parser.add_argument("--cargo-lock", default="Cargo.lock")
+    parser.add_argument("--npm-package-json", default="npm/package.json")
     args = parser.parse_args()
 
     _update_cargo_toml_version(Path(args.cargo_toml), args.version)
     _update_cargo_lock_root_version(Path(args.cargo_lock), args.crate_name, args.version)
+    _update_npm_package_json_version(Path(args.npm_package_json), args.version)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
