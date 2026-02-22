@@ -162,6 +162,9 @@ async function main() {
   const asset = `ztnet-${version}-${resolved.target}.${resolved.archiveExt}`;
   const assetUrl = `https://github.com/${repo}/releases/download/${tag}/${asset}`;
   const shaUrl = `${assetUrl}.sha256`;
+  const localArtifactsDir = path.join(packageRoot, "artifacts");
+  const localArchivePath = path.join(localArtifactsDir, asset);
+  const localShaPath = `${localArchivePath}.sha256`;
 
   const vendorDir = path.join(packageRoot, "vendor");
   ensureDir(vendorDir);
@@ -173,14 +176,25 @@ async function main() {
   ensureDir(extractDir);
 
   try {
-    const shaText = (await httpGet(shaUrl)).toString("utf8").trim();
+    const usingBundledAsset =
+      fs.existsSync(localArchivePath) && fs.existsSync(localShaPath);
+
+    const shaText = usingBundledAsset
+      ? fs.readFileSync(localShaPath, "utf8").trim()
+      : (await httpGet(shaUrl)).toString("utf8").trim();
     const expectedHash = shaText.split(/\s+/)[0]?.trim();
     if (!expectedHash || !/^[0-9a-fA-F]{64}$/.test(expectedHash)) {
-      throw new Error(`Invalid SHA256 file at ${shaUrl}`);
+      const source = usingBundledAsset ? localShaPath : shaUrl;
+      throw new Error(`Invalid SHA256 file at ${source}`);
     }
 
-    await downloadToFile(assetUrl, archivePath);
-    const actualHash = await sha256File(archivePath);
+    const actualArchivePath = usingBundledAsset ? localArchivePath : archivePath;
+
+    if (!usingBundledAsset) {
+      await downloadToFile(assetUrl, archivePath);
+    }
+
+    const actualHash = await sha256File(actualArchivePath);
     if (actualHash.toLowerCase() !== expectedHash.toLowerCase()) {
       throw new Error(
         `SHA256 mismatch for ${asset}\nExpected: ${expectedHash}\nActual:   ${actualHash}`,
@@ -188,9 +202,9 @@ async function main() {
     }
 
     if (resolved.archiveExt === "zip") {
-      await extractZip(archivePath, { dir: extractDir });
+      await extractZip(actualArchivePath, { dir: extractDir });
     } else if (resolved.archiveExt === "tar.gz") {
-      await tar.x({ file: archivePath, cwd: extractDir });
+      await tar.x({ file: actualArchivePath, cwd: extractDir });
     } else {
       throw new Error(`Unsupported archive type: ${resolved.archiveExt}`);
     }

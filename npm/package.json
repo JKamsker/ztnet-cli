@@ -16,6 +16,7 @@
   },
   "files": [
     "bin/",
+    "artifacts/",
     "scripts/",
     "README.md",
     "LICENSE"
