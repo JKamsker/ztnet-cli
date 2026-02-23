@@ -12,6 +12,7 @@ use clap::Parser;
 
 #[tokio::main]
 async fn main() {
+	dotenvy::dotenv().ok();
 	let cli = cli::Cli::parse();
 
 	if let Err(err) = app::run(cli).await {

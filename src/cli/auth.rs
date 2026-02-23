@@ -44,10 +44,10 @@ pub struct AuthLoginArgs {
 	#[arg(long, value_name = "NAME")]
 	pub profile: Option<String>,
 
-	#[arg(long, value_name = "EMAIL")]
-	pub email: String,
+	#[arg(long, value_name = "EMAIL", env = "ZTNET_EMAIL")]
+	pub email: Option<String>,
 
-	#[arg(long, value_name = "PASSWORD", conflicts_with = "password_stdin")]
+	#[arg(long, value_name = "PASSWORD", env = "ZTNET_PASSWORD", conflicts_with = "password_stdin")]
 	pub password: Option<String>,
 
 	#[arg(long, help = "Read password from STDIN (avoids shell history)", conflicts_with = "password")]

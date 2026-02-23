@@ -128,6 +128,15 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 		}
 		AuthCommand::Login(args) => {
 			let profile = args.profile.unwrap_or_else(|| effective.profile.clone());
+			let email = args
+				.email
+				.clone()
+				.filter(|value| !value.trim().is_empty())
+				.ok_or_else(|| {
+					CliError::InvalidArgument(
+						"missing --email (or environment variable ZTNET_EMAIL)".to_string(),
+					)
+				})?;
 
 			let explicit_host = explicit_host_override(global);
 			let profile_host = cfg.profile(&profile).host;
@@ -165,9 +174,14 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 			let password = if args.password_stdin {
 				read_stdin_trimmed()?
 			} else {
-				args.password.ok_or_else(|| {
-					CliError::InvalidArgument("missing --password (or --password-stdin)".to_string())
-				})?
+				args.password
+					.clone()
+					.filter(|value| !value.trim().is_empty())
+					.ok_or_else(|| {
+						CliError::InvalidArgument(
+							"missing --password (or ZTNET_PASSWORD or --password-stdin)".to_string(),
+						)
+					})?
 			};
 
 			if password.trim().is_empty() {
@@ -200,7 +214,7 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 					base,
 					&csrf_token,
 					&csrf_cookie_header,
-					&args.email,
+					&email,
 					&password,
 					&user_agent,
 					totp.as_deref(),
@@ -376,11 +390,46 @@ async fn fetch_nextauth_csrf(
 	client: &reqwest::Client,
 	base: &str,
 ) -> Result<(String, String), CliError> {
-	let url = format!("{base}/api/auth/csrf");
-	let resp = client.get(url).header("accept", "application/json").send().await?;
-	let set_cookies = collect_set_cookie(&resp);
+	let auth_base = auth_root_base(base);
+	let url = format!("{auth_base}/api/auth/csrf");
+	let resp = client.get(&url).header("accept", "application/json").send().await?;
 
-	let value = resp.json::<serde_json::Value>().await?;
+	let resp = if resp.status().is_redirection() {
+		let location = resp
+			.headers()
+			.get(reqwest::header::LOCATION)
+			.and_then(|v| v.to_str().ok())
+			.unwrap_or("/api/auth/csrf/");
+		client
+			.get(format!("{auth_base}{location}"))
+			.header("accept", "application/json")
+			.send()
+			.await?
+	} else {
+		resp
+	};
+
+	let status = resp.status();
+	let set_cookies = collect_set_cookie(&resp);
+	let body = resp.text().await?;
+	if !status.is_success() {
+		return Err(CliError::HttpStatus {
+			status,
+			message: "failed to obtain csrfToken from server".to_string(),
+			body: Some(body),
+		});
+	}
+	let value = match serde_json::from_str::<serde_json::Value>(&body) {
+		Ok(value) => value,
+		Err(err) => {
+			return Err(CliError::HttpStatus {
+				status: reqwest::StatusCode::BAD_GATEWAY,
+				message: format!("failed to parse csrf response: {err}"),
+				body: Some(body),
+			});
+		}
+	};
+
 	let csrf = value
 		.get("csrfToken")
 		.and_then(|v| v.as_str())
@@ -388,7 +437,7 @@ async fn fetch_nextauth_csrf(
 			CliError::HttpStatus {
 				status: reqwest::StatusCode::BAD_GATEWAY,
 				message: "failed to obtain csrfToken from server".to_string(),
-				body: Some(value.to_string()),
+				body: Some(body),
 			}
 		})?
 		.to_string();
@@ -407,8 +456,9 @@ async fn nextauth_credentials_login(
 	user_agent: &str,
 	totp_code: Option<&str>,
 ) -> Result<LoginResponse, CliError> {
-	let url = format!("{base}/api/auth/callback/credentials");
-	let callback_url = format!("{base}/network");
+	let auth_base = auth_root_base(base);
+	let url = format!("{auth_base}/api/auth/callback/credentials");
+	let callback_url = format!("{auth_base}/network");
 
 	let mut form: Vec<(&str, String)> = vec![
 		("csrfToken", csrf_token.to_string()),
@@ -483,6 +533,14 @@ async fn nextauth_credentials_login(
 		message: "login request failed".to_string(),
 		body: resp.text().await.ok(),
 	})
+}
+
+fn auth_root_base(base: &str) -> String {
+	let trimmed = base.trim_end_matches('/');
+	trimmed
+		.strip_suffix("/api")
+		.filter(|value| !value.is_empty())
+		.map_or_else(|| trimmed.to_string(), |value| value.to_string())
 }
 
 fn collect_set_cookie(resp: &reqwest::Response) -> Vec<String> {
