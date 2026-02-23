@@ -187,7 +187,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: "https://registry.npmjs.org"
 
       - name: Ensure npm CLI version
         if: ${{ steps.check.outputs.exists == 'false' }}
@@ -202,6 +201,8 @@ jobs:
       - name: Publish to npm
         if: ${{ steps.check.outputs.exists == 'false' }}
         working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ""
         run: npm publish
 
   winget:
