@@ -54,7 +54,7 @@ pub(super) async fn resolve_personal_network_id(
 		return Err(CliError::InvalidArgument("network cannot be empty".to_string()));
 	}
 
-	if is_zt_id(network) {
+	if is_network_id(network) {
 		return Ok(network.to_string());
 	}
 
@@ -125,6 +125,26 @@ pub(super) async fn resolve_network_org_id(
 	}
 }
 
-fn is_zt_id(value: &str) -> bool {
-	value.len() == 10 && value.chars().all(|c| c.is_ascii_hexdigit())
+fn is_network_id(value: &str) -> bool {
+	value.len() == 16 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::is_network_id;
+
+	#[test]
+	fn is_network_id_accepts_16_hex_chars() {
+		assert!(is_network_id("9ad07d01093a69e3"));
+	}
+
+	#[test]
+	fn is_network_id_rejects_10_hex_chars() {
+		assert!(!is_network_id("b621d170ad"));
+	}
+
+	#[test]
+	fn is_network_id_rejects_non_hex() {
+		assert!(!is_network_id("9ad07d01093a69eg"));
+	}
 }

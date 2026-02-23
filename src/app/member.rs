@@ -281,34 +281,59 @@ async fn member_get(
 
 	let network_id = resolve_network_id(client, org_id.as_deref(), &args.network).await?;
 
+	// Some deployments don't support a stable REST GET-by-id endpoint for members (400/405).
+	// Prefer GET-by-id when it works, but fall back to list+filter for consistent behavior.
 	let response = if let Some(org_id) = org_id.as_deref() {
 		let path = format!("/api/v1/org/{org_id}/network/{network_id}/member/{}", args.member);
-		client
+		match client
 			.request_json(Method::GET, &path, None, Default::default(), true)
-			.await?
+			.await
+		{
+			Ok(v) => v,
+			Err(CliError::HttpStatus { status, .. })
+				if status == reqwest::StatusCode::BAD_REQUEST
+					|| status == reqwest::StatusCode::METHOD_NOT_ALLOWED =>
+			{
+				member_get_via_list(client, Some(org_id), &network_id, &args.member).await?
+			}
+			Err(err) => return Err(err),
+		}
 	} else {
-		let path = format!("/api/v1/network/{network_id}/member");
-		let list = client
-			.request_json(Method::GET, &path, None, Default::default(), true)
-			.await?;
-
-		let Some(items) = list.as_array() else {
-			return Err(CliError::InvalidArgument("expected array response".to_string()));
-		};
-
-		items
-			.iter()
-			.find(|item| item.get("id").and_then(|v| v.as_str()) == Some(args.member.as_str()))
-			.cloned()
-			.ok_or(CliError::HttpStatus {
-				status: reqwest::StatusCode::NOT_FOUND,
-				message: "member not found".to_string(),
-				body: None,
-			})?
+		member_get_via_list(client, None, &network_id, &args.member).await?
 	};
 
 	print_human_or_machine(&response, effective.output, global.no_color)?;
 	Ok(())
+}
+
+async fn member_get_via_list(
+	client: &HttpClient,
+	org_id: Option<&str>,
+	network_id: &str,
+	member_id: &str,
+) -> Result<Value, CliError> {
+	let path = match org_id {
+		Some(org_id) => format!("/api/v1/org/{org_id}/network/{network_id}/member"),
+		None => format!("/api/v1/network/{network_id}/member"),
+	};
+
+	let list = client
+		.request_json(Method::GET, &path, None, Default::default(), true)
+		.await?;
+
+	let Some(items) = list.as_array() else {
+		return Err(CliError::InvalidArgument("expected array response".to_string()));
+	};
+
+	items
+		.iter()
+		.find(|item| item.get("id").and_then(|v| v.as_str()) == Some(member_id))
+		.cloned()
+		.ok_or(CliError::HttpStatus {
+			status: reqwest::StatusCode::NOT_FOUND,
+			message: "member not found".to_string(),
+			body: None,
+		})
 }
 
 async fn member_update(
