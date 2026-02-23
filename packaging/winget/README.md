@@ -29,6 +29,7 @@ Prerequisites (per action docs):
 
 Implementation detail:
 - The `winget` job in `.github/workflows/release.yml` also checks if the package exists in `microsoft/winget-pkgs` yet and skips until the initial submission PR is merged (to keep releases green).
+- Because the workflow runs on `push` to `master`, the action must be given the actual release tag (for example `v0.1.4`) via `release-tag` instead of defaulting to `master`.
 
 ### Token creation
 

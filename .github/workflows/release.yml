@@ -208,7 +208,7 @@ jobs:
   winget:
     name: Open WinGet PR
     runs-on: windows-latest
-    needs: release
+    needs: [release, meta]
 
     steps:
       - name: Checkout
@@ -231,6 +231,7 @@ jobs:
         with:
           identifier: JKamsker.ZTNetCLI
           installers-regex: 'x86_64-pc-windows-msvc\\.zip$'
+          release-tag: ${{ needs.meta.outputs.tag }}
           token: ${{ secrets.WINGET_TOKEN }}
 
   chocolatey:
