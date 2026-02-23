@@ -203,7 +203,7 @@ jobs:
         working-directory: npm
         env:
           NODE_AUTH_TOKEN: ""
-        run: npm publish
+        run: npm publish --provenance
 
   winget:
     name: Open WinGet PR
