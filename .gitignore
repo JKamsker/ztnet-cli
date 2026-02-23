@@ -5,3 +5,4 @@ __pycache__/
 /npm/vendor/
 /npm/artifacts/
 /npm/package-lock.json
+.env
