@@ -45,6 +45,15 @@ npm install -g ztnet-cli
 </details>
 
 <details>
+<summary>winget (Windows)</summary>
+
+```powershell
+winget install ztnet
+```
+
+</details>
+
+<details>
 <summary>Build from source</summary>
 
 ```bash

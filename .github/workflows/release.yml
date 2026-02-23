@@ -17,10 +17,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Check release gate
+    runs-on: ubuntu-latest
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      reason: ${{ steps.gate.outputs.reason }}
+      base_tag: ${{ steps.gate.outputs.base_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Decide whether to run release
+        id: gate
+        run: python scripts/gha/release/release_gate.py
+
   meta:
     name: Determine version + tag
     runs-on: ubuntu-latest
-    if: ${{ github.actor != 'github-actions[bot]' }}
+    needs: gate
+    if: ${{ github.actor != 'github-actions[bot]' && needs.gate.outputs.should_run == 'true' }}
     outputs:
       mode: ${{ steps.meta.outputs.mode }}
       version: ${{ steps.meta.outputs.version }}

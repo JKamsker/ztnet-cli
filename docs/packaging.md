@@ -45,6 +45,10 @@ https://github.com/JKamsker/ztnet-cli/releases/download/v<VERSION>/ztnet-<VERSIO
 
 WinGet manifests are submitted to `microsoft/winget-pkgs` (not this repo).
 
+```powershell
+winget install ztnet
+```
+
 Recommended workflow:
 
 1. Create a GitHub Release with the Windows zip asset.

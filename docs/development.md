@@ -186,6 +186,7 @@ src/
 Releases are automated on GitHub:
 
 - Every push to `master` runs `.github/workflows/release.yml`, which:
+  - skips automatically if there are no changes under `src/` since the latest `v*` tag (unless triggered via `workflow_dispatch`)
   - bumps the patch version in `Cargo.toml` (and the root package version in `Cargo.lock`)
   - updates the Scoop manifest in-repo (`bucket/ztnet.json`)
   - commits all of the above in a single `chore(release): v<version>` commit and tags it as `v<version>`
