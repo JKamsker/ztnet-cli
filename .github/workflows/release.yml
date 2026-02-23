@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -171,37 +172,36 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Stage npm artifacts
+        if: ${{ steps.check.outputs.exists == 'false' }}
+        run: python scripts/gha/release/stage_npm_artifacts.py --version "${{ steps.version.outputs.version }}"
+
       - name: Create release
         if: ${{ steps.check.outputs.exists == 'false' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/gha/release/create_release.py --version "${{ steps.version.outputs.version }}"
 
-      - name: Check npm token
-        id: npm
+      - name: Setup Node (Trusted Publishing)
         if: ${{ steps.check.outputs.exists == 'false' }}
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: python scripts/gha/common/check_env_output.py --env-var NPM_TOKEN --missing-message "NPM_TOKEN not set; skipping npm publish"
-
-      - name: Setup Node
-        if: ${{ steps.check.outputs.exists == 'false' && steps.npm.outputs.present == 'true' }}
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: "https://registry.npmjs.org"
 
+      - name: Ensure npm CLI version
+        if: ${{ steps.check.outputs.exists == 'false' }}
+        run: npm i -g npm@11.5.1
+
       - name: Verify npm package version
-        if: ${{ steps.check.outputs.exists == 'false' && steps.npm.outputs.present == 'true' }}
+        if: ${{ steps.check.outputs.exists == 'false' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: node npm/scripts/verify-version.js
 
       - name: Publish to npm
-        if: ${{ steps.check.outputs.exists == 'false' && steps.npm.outputs.present == 'true' }}
+        if: ${{ steps.check.outputs.exists == 'false' }}
         working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish
 
   winget:
