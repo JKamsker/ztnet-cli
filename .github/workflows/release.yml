@@ -230,7 +230,7 @@ jobs:
         uses: vedantmgoyal9/winget-releaser@main
         with:
           identifier: JKamsker.ZTNetCLI
-          installers-regex: 'x86_64-pc-windows-msvc\\.zip$'
+          installers-regex: 'x86_64-pc-windows-msvc\.zip$'
           release-tag: ${{ needs.meta.outputs.tag }}
           token: ${{ secrets.WINGET_TOKEN }}
 
