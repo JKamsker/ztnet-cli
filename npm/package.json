@@ -1,6 +1,6 @@
 {
   "name": "ztnet-cli",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "ZTNet CLI \u2014 manage ZeroTier networks via ZTNet",
   "license": "AGPL-3.0-only",
   "repository": {
