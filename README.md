@@ -26,18 +26,35 @@ $ ztnet network list --json
 
 ### Install
 
-```bash
-# Install via npm (prebuilt binaries)
-npm install -g ztnet-cli
-ztnet --help
+<details>
+<summary>cargo install</summary>
 
-# Clone and build from source
+```bash
+cargo install ztnet
+```
+
+</details>
+
+<details>
+<summary>npm (prebuilt binaries)</summary>
+
+```bash
+npm install -g ztnet-cli
+```
+
+</details>
+
+<details>
+<summary>Build from source</summary>
+
+```bash
 git clone https://github.com/JKamsker/ztnet-cli.git
 cd ztnet-cli
 cargo build --release
-
-# Binary is at target/release/ztnet (or ztnet.exe on Windows)
+# Binary: target/release/ztnet  (target/release/ztnet.exe on Windows)
 ```
+
+</details>
 
 ### Authenticate
 
