@@ -114,7 +114,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 				let org_id = resolve_org_id_trpc(&trpc, &args.org).await?;
 
 				let users = trpc
-					.call(
+					.query(
 						"org.getPlatformUsers",
 						serde_json::json!({ "organizationId": &org_id }),
 					)
@@ -182,7 +182,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 
 				let user_id = if args.user.contains('@') {
 					let users = trpc
-						.call("org.getOrgUsers", serde_json::json!({ "organizationId": &org_id }))
+						.query("org.getOrgUsers", serde_json::json!({ "organizationId": &org_id }))
 						.await?;
 					let Some(users) = users.as_array() else {
 						return Err(CliError::InvalidArgument(
@@ -258,7 +258,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 				crate::cli::OrgInviteCommand::List(args) => {
 					let org_id = resolve_org_id_trpc(&trpc, &args.org).await?;
 					let response = trpc
-						.call("org.getInvites", serde_json::json!({ "organizationId": org_id }))
+						.query("org.getInvites", serde_json::json!({ "organizationId": org_id }))
 						.await?;
 					output::print_value(&response, effective.output, global.no_color)?;
 					Ok(())
@@ -300,7 +300,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 				crate::cli::OrgSettingsCommand::Get(args) => {
 					let org_id = resolve_org_id_trpc(&trpc, &args.org).await?;
 					let response = trpc
-						.call(
+						.query(
 							"org.getOrganizationSettings",
 							serde_json::json!({ "organizationId": org_id }),
 						)
@@ -345,7 +345,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 				crate::cli::OrgWebhooksCommand::List(args) => {
 					let org_id = resolve_org_id_trpc(&trpc, &args.org).await?;
 					let response = trpc
-						.call("org.getOrgWebhooks", serde_json::json!({ "organizationId": org_id }))
+						.query("org.getOrgWebhooks", serde_json::json!({ "organizationId": org_id }))
 						.await?;
 					output::print_value(&response, effective.output, global.no_color)?;
 					Ok(())
@@ -392,7 +392,7 @@ pub(super) async fn run(global: &GlobalOpts, command: OrgCommand) -> Result<(), 
 			let trpc = trpc_authed(global, &effective)?;
 			let org_id = resolve_org_id_trpc(&trpc, &args.org).await?;
 			let response = trpc
-				.call("org.getLogs", serde_json::json!({ "organizationId": org_id }))
+				.query("org.getLogs", serde_json::json!({ "organizationId": org_id }))
 				.await?;
 			output::print_value(&response, effective.output, global.no_color)?;
 			Ok(())

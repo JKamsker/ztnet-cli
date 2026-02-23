@@ -307,7 +307,7 @@ pub(super) async fn flow_rules(
 	match args.command {
 		NetworkFlowRulesCommand::Get(get) => {
 			let response = trpc
-				.call(
+				.query(
 					"network.getFlowRule",
 					json!({ "nwid": network_id, "central": false, "reset": get.reset }),
 				)
@@ -332,7 +332,7 @@ fn trpc_authed(global: &GlobalOpts, effective: &EffectiveConfig) -> Result<TrpcC
 }
 
 async fn get_network_details(trpc: &TrpcClient, nwid: &str) -> Result<Value, CliError> {
-	trpc.call("network.getNetworkById", json!({ "nwid": nwid, "central": false }))
+	trpc.query("network.getNetworkById", json!({ "nwid": nwid, "central": false }))
 		.await
 }
 

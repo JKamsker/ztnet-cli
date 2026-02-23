@@ -203,12 +203,11 @@ pub(super) async fn run(global: &GlobalOpts, command: AuthCommand) -> Result<(),
 				.redirect(reqwest::redirect::Policy::none())
 				.build()?;
 
+			let user_agent = format!("ztnet-cli/{}", env!("CARGO_PKG_VERSION"));
 			let mut totp = args.totp.clone();
 			loop {
 				let (csrf_token, csrf_cookie_header) =
-					fetch_nextauth_csrf(&client, base).await?;
-
-				let user_agent = format!("ztnet-cli/{}", env!("CARGO_PKG_VERSION"));
+					fetch_nextauth_csrf(&client, base, &user_agent).await?;
 				let response = nextauth_credentials_login(
 					&client,
 					base,
@@ -389,46 +388,66 @@ struct LoginResponse {
 async fn fetch_nextauth_csrf(
 	client: &reqwest::Client,
 	base: &str,
+	user_agent: &str,
 ) -> Result<(String, String), CliError> {
 	let auth_base = auth_root_base(base);
-	let url = format!("{auth_base}/api/auth/csrf");
-	let resp = client.get(&url).header("accept", "application/json").send().await?;
+	let mut url = Url::parse(&format!("{auth_base}/api/auth/csrf/"))?;
 
-	let resp = if resp.status().is_redirection() {
-		let location = resp
-			.headers()
-			.get(reqwest::header::LOCATION)
-			.and_then(|v| v.to_str().ok())
-			.unwrap_or("/api/auth/csrf/");
-		client
-			.get(format!("{auth_base}{location}"))
+	let mut cookies: BTreeMap<String, String> = BTreeMap::new();
+	for _ in 0..8 {
+		let cookie_header = cookie_header_from_pairs(&cookies);
+		let mut request = client
+			.get(url.clone())
 			.header("accept", "application/json")
-			.send()
-			.await?
-	} else {
-		resp
-	};
+			.header("user-agent", user_agent);
+		if !cookie_header.is_empty() {
+			request = request.header("cookie", cookie_header);
+		}
 
-	let status = resp.status();
-	let set_cookies = collect_set_cookie(&resp);
-	let body = resp.text().await?;
-	if !status.is_success() {
-		return Err(CliError::HttpStatus {
-			status,
-			message: "failed to obtain csrfToken from server".to_string(),
-			body: Some(body),
-		});
-	}
-	let value = match serde_json::from_str::<serde_json::Value>(&body) {
-		Ok(value) => value,
-		Err(err) => {
+		let resp = request.send().await?;
+		let status = resp.status();
+		let set_cookies = collect_set_cookie(&resp);
+		merge_set_cookie_pairs(&mut cookies, &set_cookies);
+
+		if status.is_redirection() {
+			let location = resp
+				.headers()
+				.get(reqwest::header::LOCATION)
+				.and_then(|v| v.to_str().ok())
+				.unwrap_or("")
+				.trim()
+				.to_string();
+			if location.is_empty() {
+				return Err(CliError::HttpStatus {
+					status,
+					message: "csrf request redirected without a location header".to_string(),
+					body: None,
+				});
+			}
+
+			url = resolve_redirect_url(&url, &location)?;
+			continue;
+		}
+
+		let body = resp.text().await?;
+		if !status.is_success() {
 			return Err(CliError::HttpStatus {
-				status: reqwest::StatusCode::BAD_GATEWAY,
-				message: format!("failed to parse csrf response: {err}"),
+				status,
+				message: "failed to obtain csrfToken from server".to_string(),
 				body: Some(body),
 			});
 		}
-	};
+
+		let value = match serde_json::from_str::<serde_json::Value>(&body) {
+			Ok(value) => value,
+			Err(err) => {
+				return Err(CliError::HttpStatus {
+					status: reqwest::StatusCode::BAD_GATEWAY,
+					message: format!("failed to parse csrf response: {err}"),
+					body: Some(body),
+				});
+			}
+		};
 
 	let csrf = value
 		.get("csrfToken")
@@ -442,8 +461,15 @@ async fn fetch_nextauth_csrf(
 		})?
 		.to_string();
 
-	let cookie_header = set_cookie_to_cookie_header(&set_cookies);
-	Ok((csrf, cookie_header))
+	let cookie_header = cookie_header_from_pairs(&cookies);
+	return Ok((csrf, cookie_header));
+	}
+
+	Err(CliError::HttpStatus {
+		status: reqwest::StatusCode::BAD_GATEWAY,
+		message: "csrf request redirected too many times".to_string(),
+		body: None,
+	})
 }
 
 async fn nextauth_credentials_login(
@@ -457,7 +483,6 @@ async fn nextauth_credentials_login(
 	totp_code: Option<&str>,
 ) -> Result<LoginResponse, CliError> {
 	let auth_base = auth_root_base(base);
-	let url = format!("{auth_base}/api/auth/callback/credentials");
 	let callback_url = format!("{auth_base}/network");
 
 	let mut form: Vec<(&str, String)> = vec![
@@ -473,51 +498,143 @@ async fn nextauth_credentials_login(
 		form.push(("totpCode", totp.to_string()));
 	}
 
-	let resp = client
-		.post(url)
-		.header("accept", "application/json")
-		.header("cookie", csrf_cookie_header)
-		.form(&form)
-		.send()
-		.await?;
+	// NextAuth uses trailing slashes for many auth routes. Prefer the canonical
+	// path to avoid 308 redirects (which preserve method and are easy to mishandle).
+	let mut url = Url::parse(&format!("{auth_base}/api/auth/callback/credentials/"))?;
+	let mut method = Method::POST;
 
-	let status = resp.status();
-	let set_cookies = collect_set_cookie(&resp);
-	let location = resp
-		.headers()
-		.get(reqwest::header::LOCATION)
-		.and_then(|v| v.to_str().ok())
-		.unwrap_or("")
-		.to_string();
+	let mut cookies: BTreeMap<String, String> = parse_cookie_header_pairs(csrf_cookie_header);
 
-	let session_cookie = extract_cookie_value(&set_cookies, "next-auth.session-token")
-		.or_else(|| extract_cookie_value(&set_cookies, "__Secure-next-auth.session-token"));
+	for _ in 0..8 {
+		let cookie_header = cookie_header_from_pairs(&cookies);
+		let mut request = client
+			.request(method.clone(), url.clone())
+			.header("accept", "application/json")
+			.header("x-auth-return-redirect", "1")
+			.header("user-agent", user_agent);
 
-	let device_cookie = extract_cookie_value(&set_cookies, "next-auth.did-token");
+		if !cookie_header.is_empty() {
+			request = request.header("cookie", cookie_header);
+		}
 
-	if status.is_success() {
-		let value = resp
-			.json::<serde_json::Value>()
-			.await
-			.unwrap_or(serde_json::Value::Null);
+		if method == Method::POST {
+			request = request.form(&form);
+		}
 
-		let ok = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-		let error = value
-			.get("error")
+		let resp = request.send().await?;
+		let status = resp.status();
+		let set_cookies = collect_set_cookie(&resp);
+		merge_set_cookie_pairs(&mut cookies, &set_cookies);
+
+		let location = resp
+			.headers()
+			.get(reqwest::header::LOCATION)
+			.and_then(|v| v.to_str().ok())
+			.unwrap_or("")
+			.trim()
+			.to_string();
+
+		let session_cookie = pick_cookie_value(
+			&cookies,
+			&[
+				"__Secure-next-auth.session-token",
+				"__Host-next-auth.session-token",
+				"next-auth.session-token",
+			],
+		);
+
+		let device_cookie = pick_cookie_value(
+			&cookies,
+			&[
+				"__Secure-next-auth.did-token",
+				"__Host-next-auth.did-token",
+				"next-auth.did-token",
+			],
+		);
+
+		if status.is_redirection() {
+			if location.is_empty() {
+				return Err(CliError::HttpStatus {
+					status,
+					message: "login redirect missing location header".to_string(),
+					body: None,
+				});
+			}
+
+			let error = parse_error_from_location(&location);
+			if error.is_some() {
+				return Ok(LoginResponse {
+					ok: false,
+					error,
+					session_cookie,
+					device_cookie,
+				});
+			}
+
+			// If we already have a session cookie, we can stop here. Any further
+			// redirect targets (like `/network`) are irrelevant for CLI auth.
+			if session_cookie.is_some() {
+				return Ok(LoginResponse {
+					ok: true,
+					error: None,
+					session_cookie,
+					device_cookie,
+				});
+			}
+
+			url = resolve_redirect_url(&url, &location)?;
+
+			// Match browser behavior:
+			// - 307/308 preserve method and body (we keep POST for canonicalization hops)
+			// - 301/302/303 switch to GET (NextAuth commonly redirects to callbackUrl)
+			if status != reqwest::StatusCode::TEMPORARY_REDIRECT
+				&& status != reqwest::StatusCode::PERMANENT_REDIRECT
+			{
+				method = Method::GET;
+			}
+			continue;
+		}
+
+		let body_text = resp.text().await.unwrap_or_default();
+
+		if !status.is_success() {
+			// If the server already issued a session cookie, treat login as successful
+			// even if the next page fails (e.g. `/network` errors).
+			if session_cookie.is_some() {
+				return Ok(LoginResponse {
+					ok: true,
+					error: None,
+					session_cookie,
+					device_cookie,
+				});
+			}
+
+			return Err(CliError::HttpStatus {
+				status,
+				message: "login request failed".to_string(),
+				body: (!body_text.trim().is_empty()).then_some(body_text),
+			});
+		}
+
+		let body_json = serde_json::from_str::<serde_json::Value>(&body_text).ok();
+
+		let mut error = body_json
+			.as_ref()
+			.and_then(|v| v.get("error"))
 			.and_then(|v| v.as_str())
 			.map(str::to_string)
 			.filter(|s| !s.trim().is_empty());
 
-		return Ok(LoginResponse {
-			ok,
-			error,
-			session_cookie,
-			device_cookie,
-		});
-	}
+		if error.is_none() {
+			let url_from_body = body_json
+				.as_ref()
+				.and_then(|v| v.get("url"))
+				.and_then(|v| v.as_str())
+				.unwrap_or("")
+				.trim();
+			error = parse_error_from_location(url_from_body);
+		}
 
-	if status.is_redirection() {
-		let error = parse_error_from_location(&location);
 		let ok = error.is_none() && session_cookie.is_some();
 
 		return Ok(LoginResponse {
@@ -529,9 +646,9 @@ async fn nextauth_credentials_login(
 	}
 
 	Err(CliError::HttpStatus {
-		status,
-		message: "login request failed".to_string(),
-		body: resp.text().await.ok(),
+		status: reqwest::StatusCode::BAD_GATEWAY,
+		message: "login redirected too many times".to_string(),
+		body: None,
 	})
 }
 
@@ -552,35 +669,74 @@ fn collect_set_cookie(resp: &reqwest::Response) -> Vec<String> {
 		.collect()
 }
 
-fn set_cookie_to_cookie_header(set_cookies: &[String]) -> String {
-	let mut pairs = Vec::new();
+fn merge_set_cookie_pairs(out: &mut BTreeMap<String, String>, set_cookies: &[String]) {
 	for raw in set_cookies {
-		let Some((pair, _rest)) = raw.split_once(';') else {
+		let Some((name, value)) = parse_set_cookie_pair(raw) else {
 			continue;
 		};
-		let pair = pair.trim();
-		if pair.is_empty() {
-			continue;
-		}
-		pairs.push(pair.to_string());
+		out.insert(name, value);
 	}
-	pairs.join("; ")
 }
 
-fn extract_cookie_value(set_cookies: &[String], name: &str) -> Option<String> {
-	let prefix = format!("{name}=");
-	for raw in set_cookies {
-		let trimmed = raw.trim();
-		if !trimmed.starts_with(&prefix) {
+fn parse_set_cookie_pair(raw: &str) -> Option<(String, String)> {
+	let pair = raw.split(';').next()?.trim();
+	if pair.is_empty() {
+		return None;
+	}
+	let (name, value) = pair.split_once('=')?;
+	let name = name.trim();
+	let value = value.trim();
+	if name.is_empty() || value.is_empty() {
+		return None;
+	}
+	Some((name.to_string(), value.to_string()))
+}
+
+fn cookie_header_from_pairs(pairs: &BTreeMap<String, String>) -> String {
+	pairs
+		.iter()
+		.map(|(k, v)| format!("{k}={v}"))
+		.collect::<Vec<_>>()
+		.join("; ")
+}
+
+fn parse_cookie_header_pairs(header: &str) -> BTreeMap<String, String> {
+	let mut out = BTreeMap::new();
+	for part in header.split(';') {
+		let part = part.trim();
+		if part.is_empty() {
 			continue;
 		}
-		let rest = &trimmed[prefix.len()..];
-		let value = rest.split(';').next().unwrap_or("").trim();
-		if !value.is_empty() {
-			return Some(value.to_string());
+		let Some((name, value)) = part.split_once('=') else {
+			continue;
+		};
+		let name = name.trim();
+		let value = value.trim();
+		if name.is_empty() || value.is_empty() {
+			continue;
+		}
+		out.insert(name.to_string(), value.to_string());
+	}
+	out
+}
+
+fn pick_cookie_value(cookies: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+	for name in names {
+		if let Some(value) = cookies.get(*name) {
+			let v = value.trim();
+			if !v.is_empty() {
+				return Some(v.to_string());
+			}
 		}
 	}
 	None
+}
+
+fn resolve_redirect_url(current: &Url, location: &str) -> Result<Url, CliError> {
+	if let Ok(abs) = Url::parse(location) {
+		return Ok(abs);
+	}
+	Ok(current.join(location)?)
 }
 
 fn auth_hosts_list(
@@ -835,6 +991,38 @@ mod tests {
 			infer_profile_name("http://localhost:3000", &cfg).unwrap(),
 			"localhost-3000-2"
 		);
+	}
+
+	#[test]
+	fn parse_set_cookie_pair_extracts_cookie_name_and_value() {
+		let (k, v) = parse_set_cookie_pair("next-auth.csrf-token=abc%7Cdef; Path=/; HttpOnly")
+			.expect("pair");
+		assert_eq!(k, "next-auth.csrf-token");
+		assert_eq!(v, "abc%7Cdef");
+	}
+
+	#[test]
+	fn merge_set_cookie_pairs_overwrites_previous_values() {
+		let mut out = BTreeMap::new();
+		merge_set_cookie_pairs(
+			&mut out,
+			&[
+				"next-auth.csrf-token=one; Path=/".to_string(),
+				"next-auth.csrf-token=two; Path=/".to_string(),
+			],
+		);
+		assert_eq!(out.get("next-auth.csrf-token").map(String::as_str), Some("two"));
+	}
+
+	#[test]
+	fn resolve_redirect_url_handles_relative_and_absolute_locations() {
+		let current = Url::parse("https://example.com/api/auth/csrf").unwrap();
+		let joined = resolve_redirect_url(&current, "/api/auth/csrf/").unwrap();
+		assert_eq!(joined.as_str(), "https://example.com/api/auth/csrf/");
+
+		let absolute =
+			resolve_redirect_url(&current, "https://other.example.com/api/auth/csrf").unwrap();
+		assert_eq!(absolute.as_str(), "https://other.example.com/api/auth/csrf");
 	}
 }
 

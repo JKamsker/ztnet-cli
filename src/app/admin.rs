@@ -40,14 +40,14 @@ async fn users(
 	match command {
 		AdminUsersCommand::List(args) => {
 			let response = trpc
-				.call("admin.getUsers", json!({ "isAdmin": args.admins }))
+				.query("admin.getUsers", json!({ "isAdmin": args.admins }))
 				.await?;
 			output::print_value(&response, effective.output, global.no_color)?;
 			Ok(())
 		}
 		AdminUsersCommand::Get(args) => {
 			let response = trpc
-				.call("admin.getUser", json!({ "userId": args.user }))
+				.query("admin.getUser", json!({ "userId": args.user }))
 				.await?;
 			print_human_or_machine(&response, effective.output, global.no_color)?;
 			Ok(())
@@ -112,7 +112,7 @@ async fn backup(
 ) -> Result<(), CliError> {
 	match command {
 		AdminBackupCommand::List => {
-			let response = trpc.call("admin.listBackups", Value::Null).await?;
+			let response = trpc.query("admin.listBackups", Value::Null).await?;
 			output::print_value(&response, effective.output, global.no_color)?;
 			Ok(())
 		}
@@ -130,7 +130,7 @@ async fn backup(
 		}
 		AdminBackupCommand::Download(args) => {
 			let response = trpc
-				.call("admin.downloadBackup", json!({ "fileName": args.backup }))
+				.query("admin.downloadBackup", json!({ "fileName": args.backup }))
 				.await?;
 
 			let data = response
@@ -259,7 +259,7 @@ async fn mail(
 			}
 			AdminMailTemplatesCommand::Get(args) => {
 				let response = trpc
-					.call("admin.getMailTemplates", json!({ "template": args.name }))
+					.query("admin.getMailTemplates", json!({ "template": args.name }))
 					.await?;
 				print_human_or_machine(&response, effective.output, global.no_color)?;
 				Ok(())
@@ -291,7 +291,7 @@ async fn settings(
 ) -> Result<(), CliError> {
 	match command {
 		AdminSettingsCommand::Get => {
-			let response = trpc.call("settings.getAllOptions", Value::Null).await?;
+			let response = trpc.query("settings.getAllOptions", Value::Null).await?;
 			print_human_or_machine(&response, effective.output, global.no_color)?;
 			Ok(())
 		}
@@ -341,7 +341,7 @@ async fn invites(
 ) -> Result<(), CliError> {
 	match command {
 		AdminInvitesCommand::List => {
-			let response = trpc.call("admin.getInvitationLink", Value::Null).await?;
+			let response = trpc.query("admin.getInvitationLink", Value::Null).await?;
 			output::print_value(&response, effective.output, global.no_color)?;
 			Ok(())
 		}

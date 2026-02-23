@@ -107,7 +107,7 @@ async fn member_add_trpc(
 	let trpc = trpc_authed(global, effective)?;
 	let network_id = resolve_personal_network_id(&trpc, &args.network).await?;
 	let details = trpc
-		.call(
+		.query(
 			"network.getNetworkById",
 			serde_json::json!({ "nwid": network_id, "central": false }),
 		)
@@ -135,7 +135,7 @@ async fn member_tags_trpc(
 	let trpc = trpc_authed(global, effective)?;
 	let network_id = resolve_personal_network_id(&trpc, &args.network).await?;
 	let details = trpc
-		.call(
+		.query(
 			"network.getNetworkById",
 			serde_json::json!({ "nwid": network_id, "central": false }),
 		)
@@ -145,7 +145,7 @@ async fn member_tags_trpc(
 	match args.command {
 		crate::cli::MemberTagsCommand::List => {
 			let member = trpc
-				.call(
+				.query(
 					"networkMember.getMemberById",
 					serde_json::json!({ "id": args.member, "nwid": network_id, "central": false }),
 				)

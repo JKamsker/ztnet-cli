@@ -11,7 +11,7 @@ pub(super) async fn resolve_org_id(trpc: &TrpcClient, org: &str) -> Result<Strin
 		return Err(CliError::InvalidArgument("org cannot be empty".to_string()));
 	}
 
-	let value = trpc.call("org.getOrgIdbyUserid", Value::Null).await?;
+	let value = trpc.query("org.getOrgIdbyUserid", Value::Null).await?;
 	let Some(items) = value.as_array() else {
 		return Ok(org.to_string());
 	};
@@ -59,7 +59,7 @@ pub(super) async fn resolve_personal_network_id(
 	}
 
 	let input = Value::Object(Default::default());
-	let value = trpc.call("network.getUserNetworks", input).await?;
+	let value = trpc.query("network.getUserNetworks", input).await?;
 	let Some(items) = value.as_array() else {
 		return Err(CliError::InvalidArgument(
 			"failed to list networks for name resolution".to_string(),

@@ -52,7 +52,55 @@ impl TrpcClient {
 		self
 	}
 
-	pub(super) async fn call(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
+	pub(super) async fn query(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
+		let path = format!("api/trpc/{}", procedure.trim());
+
+		let mut headers = HeaderMap::new();
+		headers.insert("accept", HeaderValue::from_static("application/json"));
+
+		if let Some(ref cookie) = self.cookie {
+			headers.insert(
+				reqwest::header::COOKIE,
+				HeaderValue::from_str(cookie).map_err(|_| {
+					CliError::InvalidArgument("cookie contains invalid characters".to_string())
+				})?,
+			);
+		}
+
+		let input_param = if input.is_null() {
+			None
+		} else {
+			Some(serde_json::to_string(&json!({ "json": input }))?)
+		};
+
+		if self.dry_run {
+			let base_idx = self.active_base.load(Ordering::Relaxed);
+			let mut url = self.build_url_for_base(base_idx, &path)?;
+			if let Some(input) = input_param.as_deref() {
+				url.query_pairs_mut().append_pair("input", input);
+			}
+			print_dry_run_no_body(&Method::GET, &url, &headers);
+			return Err(CliError::DryRunPrinted);
+		}
+
+		multi_base::try_with_base_fallback(
+			&self.bases,
+			&self.active_base,
+			&path,
+			false,
+			should_try_host_autofix,
+			|mut url| {
+				if let Some(ref input) = input_param {
+					url.query_pairs_mut().append_pair("input", input);
+				}
+				self.query_with_url(url, &headers)
+			},
+			|idx| self.maybe_warn_host_autofix(idx),
+		)
+		.await
+	}
+
+	pub(super) async fn mutation(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
 		let path = format!("api/trpc/{}?batch=1", procedure.trim());
 
 		let body = json!({ "0": { "json": input } });
@@ -90,6 +138,11 @@ impl TrpcClient {
 		.await
 	}
 
+	// Backwards-compat: keep `.call()` but treat it as a mutation.
+	pub(super) async fn call(&self, procedure: &str, input: Value) -> Result<Value, CliError> {
+		self.mutation(procedure, input).await
+	}
+
 	fn build_url_for_base(&self, base_idx: usize, path: &str) -> Result<Url, CliError> {
 		multi_base::build_url_for_base(&self.bases, base_idx, path, false)
 	}
@@ -117,6 +170,51 @@ impl TrpcClient {
 				.request(Method::POST, url.clone())
 				.headers(headers.clone())
 				.body(body_bytes.clone());
+
+			match request.send().await {
+				Ok(resp) => {
+					let status = resp.status();
+					let retry_after = resp
+						.headers()
+						.get("retry-after")
+						.and_then(|v| v.to_str().ok())
+						.and_then(|s| s.trim().parse::<u64>().ok())
+						.map(Duration::from_secs);
+					let bytes = resp.bytes().await?;
+
+					if should_retry_status(status) && attempt < self.retries {
+						if status == StatusCode::TOO_MANY_REQUESTS {
+							tokio::time::sleep(retry_after.unwrap_or(backoff)).await;
+						} else {
+							tokio::time::sleep(backoff).await;
+						}
+						backoff = (backoff * 2).min(Duration::from_secs(5));
+						continue;
+					}
+
+					return parse_trpc_http_response(status, bytes.as_ref());
+				}
+				Err(err) => {
+					if attempt < self.retries && should_retry_error(&err) {
+						tokio::time::sleep(backoff).await;
+						backoff = (backoff * 2).min(Duration::from_secs(5));
+						continue;
+					}
+					return Err(CliError::Request(err));
+				}
+			}
+		}
+
+		Err(CliError::RateLimited)
+	}
+
+	async fn query_with_url(&self, url: Url, headers: &HeaderMap) -> Result<Value, CliError> {
+		let mut backoff = Duration::from_millis(200);
+		for attempt in 0..=self.retries {
+			let request = self
+				.client
+				.request(Method::GET, url.clone())
+				.headers(headers.clone());
 
 			match request.send().await {
 				Ok(resp) => {
@@ -316,5 +414,20 @@ fn print_dry_run(method: &Method, url: &Url, headers: &HeaderMap, body: &Value) 
 	if let Ok(pretty) = serde_json::to_string_pretty(body) {
 		println!();
 		println!("{pretty}");
+	}
+}
+
+fn print_dry_run_no_body(method: &Method, url: &Url, headers: &HeaderMap) {
+	println!("{method} {url}");
+
+	for (name, value) in headers.iter() {
+		if name.as_str().eq_ignore_ascii_case("cookie") {
+			println!("{name}: REDACTED");
+			continue;
+		}
+
+		if let Ok(value) = value.to_str() {
+			println!("{name}: {value}");
+		}
 	}
 }

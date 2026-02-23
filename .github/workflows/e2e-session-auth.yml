@@ -1,0 +1,19 @@
+name: e2e-session-auth
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run session-auth e2e
+        run: bash scripts/e2e-session-auth.sh
+
